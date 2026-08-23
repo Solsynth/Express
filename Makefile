@@ -1,6 +1,10 @@
 SERVICE := distribution
 
-.PHONY: run build test check
+.PHONY: run build build-cli build-express test check
+
+build-cli build-express:
+	mkdir -p bin
+	go build -o bin/express ./cmd/distributionctl
 
 run:
 	CONFIG_PATH=config.example.toml go run ./cmd/distribution
