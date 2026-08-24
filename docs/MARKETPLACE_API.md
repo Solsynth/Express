@@ -254,9 +254,8 @@ POST /api/products/{product_id}/releases/{release_id}/publish
 Authorization: Bearer <Sphere access token or product upload key>
 ```
 
-Publishing requires at least one complete artifact. Upload-key publishing is
-restricted to draft releases created by that same key. A published release
-remains editable through the release update endpoint; yanked releases remain
+locked. The update endpoint accepts the same fields as creation, including
+`attachments`, which replace the stored list.
 locked.
 
 Publisher editors can inspect unpublished releases through the authenticated

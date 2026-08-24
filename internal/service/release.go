@@ -122,6 +122,7 @@ type UpdateReleaseInput struct {
 	Metadata     database.JSONMap
 	ForceUpdate  bool
 	Descriptions map[string]string
+	Attachments  database.CloudFileReferenceList
 }
 
 type CreateChannelInput struct {
@@ -618,6 +619,10 @@ func (s *ReleaseService) UpdateRelease(ctx context.Context, appID, releaseID str
 	if err != nil {
 		return nil, err
 	}
+	attachments, err := normalizeCloudFiles(input.Attachments)
+	if err != nil {
+		return nil, err
+	}
 	channelNames, err := normalizeChannels(input.Channels, input.Channel)
 	if err != nil {
 		return nil, err
@@ -635,6 +640,7 @@ func (s *ReleaseService) UpdateRelease(ctx context.Context, appID, releaseID str
 				"title":         strings.TrimSpace(input.Title),
 				"metadata":      input.Metadata,
 				"force_update":  input.ForceUpdate,
+				"attachments":   attachments,
 				"updated_at":    time.Now().UTC(),
 			})
 		if result.Error != nil {

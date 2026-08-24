@@ -264,7 +264,7 @@ func TestUpdateReleaseRouteUpdatesDraft(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updateRequest := httptest.NewRequest(http.MethodPut, "/api/products/"+productID+"/releases/"+draft.ID, strings.NewReader(`{"version":"1.0.1","channels":["stable"],"title":"Client 1.0.1","titles":{"en-US":"Client 1.0.1","zh-CN":"客户端 1.0.1"},"release_notes":"Fixed a crash","force_update":true}`))
+	updateRequest := httptest.NewRequest(http.MethodPut, "/api/products/"+productID+"/releases/"+draft.ID, strings.NewReader(`{"version":"1.0.1","channels":["stable"],"title":"Client 1.0.1","titles":{"en-US":"Client 1.0.1","zh-CN":"客户端 1.0.1"},"release_notes":"Fixed a crash","force_update":true,"attachments":[{"id":"release-banner","name":"Release banner","mime_type":"image/png","size":12},{"url":"https://cdn.example/notes.pdf","name":"Release notes","mime_type":"application/pdf"}]}`))
 	updateRequest.Header.Set("Authorization", "Bearer sphere-token")
 	updated := httptest.NewRecorder()
 	server.Engine.ServeHTTP(updated, updateRequest)
@@ -272,7 +272,7 @@ func TestUpdateReleaseRouteUpdatesDraft(t *testing.T) {
 		t.Fatalf("update release status = %d, body = %s", updated.Code, updated.Body.String())
 	}
 	body := updated.Body.String()
-	for _, want := range []string{`"version":"1.0.1"`, `"force_update":true`, `"titles"`} {
+	for _, want := range []string{`"version":"1.0.1"`, `"force_update":true`, `"titles"`, `"attachments"`, `"release-banner"`} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("updated release missing %s: %s", want, body)
 		}

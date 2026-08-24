@@ -43,6 +43,7 @@ type updateReleaseRequest struct {
 	Metadata     database.JSONMap  `json:"metadata,omitempty"`
 	ForceUpdate  bool              `json:"force_update"`
 	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Attachments  database.CloudFileReferenceList `json:"attachments,omitempty"`
 }
 
 type updateCheckRequest struct {
@@ -652,7 +653,7 @@ func updateRelease(releases *service.ReleaseService) gin.HandlerFunc {
 		}
 		release, err := releases.UpdateRelease(c.Request.Context(), catalogID(c), c.Param("releaseID"), service.UpdateReleaseInput{
 			Version: input.Version, Channel: input.Channel, Channels: input.Channels,
-			ReleaseNotes: input.ReleaseNotes, Title: input.Title, Titles: input.Titles, Metadata: input.Metadata, ForceUpdate: input.ForceUpdate, Descriptions: input.Descriptions,
+			ReleaseNotes: input.ReleaseNotes, Title: input.Title, Titles: input.Titles, Metadata: input.Metadata, ForceUpdate: input.ForceUpdate, Descriptions: input.Descriptions, Attachments: input.Attachments,
 		})
 		if err != nil {
 			writeError(c, err)

@@ -59,8 +59,9 @@ func TestMultiChannelReleaseAndUpdateTelemetry(t *testing.T) {
 		Version: "2.1.0", Channels: []string{"stable", "experimental"}, Title: "Updated release",
 		Titles:       map[string]string{"en-US": "Updated release", "zh-CN": "更新版本"},
 		ReleaseNotes: "Updated release", Descriptions: map[string]string{"en-US": "Updated release", "zh-CN": "更新版本"},
+		Attachments:  database.CloudFileReferenceList{{Id: "release-banner-v2", Name: "Release banner v2", MimeType: "image/png", Size: 34}},
 	})
-	if err != nil || release.Version != "2.1.0" || release.Title != "Updated release" || release.Titles["zh-CN"] != "更新版本" || release.Descriptions["zh-CN"] != "更新版本" {
+	if err != nil || release.Version != "2.1.0" || release.Title != "Updated release" || release.Titles["zh-CN"] != "更新版本" || release.Descriptions["zh-CN"] != "更新版本" || len(release.Attachments) != 1 || release.Attachments[0].Id != "release-banner-v2" {
 		t.Fatalf("updated release metadata = %#v, error = %v", release, err)
 	}
 	var localizationCount int64
