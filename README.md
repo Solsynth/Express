@@ -25,6 +25,19 @@ The CLI binary is written to:
 ```text
 bin/express
 ```
+Install directly with Go:
+
+```bash
+go install src.solsynth.dev/sosys/distribution/cmd/express@latest
+```
+
+This installs `express` into `GOBIN`, or `GOPATH/bin` when `GOBIN` is not set. Ensure that directory is on your `PATH`.
+
+From a local checkout:
+
+```bash
+go install ./cmd/express
+```
 
 Show command help without configuring a server:
 
@@ -32,9 +45,11 @@ Show command help without configuring a server:
 bin/express --help
 ```
 
-The CLI uses the DistributionCenter service root as its base URL. Do not include `/api` in the URL.
+The default API base URL is `https://api.solian.app/dist`. Do not include `/api` in the URL; override the default with `--base-url`, `DISTRIBUTION_API_URL`, `DISTRIBUTION_BASE_URL`, or `SOL_SYNTH_EXPRESS_URL`.
 
 ```bash
+bin/express apps list
+
 bin/express \
   --base-url https://distribution.example.com \
   apps list
@@ -48,9 +63,19 @@ bin/express \
 express auth login
 ```
 
-The CLI prompts for the DistributionCenter URL and Sphere access token. Token input is hidden when the command is running in a terminal.
+The default login uses Solian's OAuth device authorization flow with PKCE. It prints a verification URL and user code; finish sign-in in a browser and `express` waits for the access token. The requested OAuth scope is `*`.
 
-Non-interactive login is suitable for setup scripts:
+The OAuth public client ID must be registered with the identity service. Provide it with `--client-id` or `SOL_SYNTH_EXPRESS_CLIENT_ID`:
+
+```bash
+express auth login \
+  --base-url https://distribution.example.com \
+  --client-id YOUR_REGISTERED_CLIENT_ID
+```
+
+The discovery document defaults to `https://solian.app/.well-known/openid-configuration`. Override it with `--oidc-discovery-url` or `SOL_SYNTH_EXPRESS_OIDC_DISCOVERY_URL`.
+
+For scripts, direct token login remains available:
 
 ```bash
 express auth login \
@@ -98,7 +123,66 @@ Supported environment variables:
 | `SOL_SYNTH_EXPRESS_URL` | Solsynth Express base URL |
 | `DISTRIBUTION_TOKEN` | Bearer token or product upload key |
 | `SPHERE_ACCESS_TOKEN` | Sphere bearer token |
+| `SOL_SYNTH_EXPRESS_CLIENT_ID` | Registered OAuth public client ID |
+| `SOL_SYNTH_EXPRESS_OIDC_DISCOVERY_URL` | OpenID Connect discovery URL |
+| `OAUTH_CLIENT_ID` | Alternate OAuth client ID variable |
+| `OIDC_DISCOVERY_URL` | Alternate discovery URL variable |
 | `SOL_SYNTH_EXPRESS_CONFIG` | Credential file path |
+
+## Complete publisher workflow
+
+The CLI supports the complete publisher release lifecycle:
+
+1. Create or update the product.
+2. Create a custom channel when needed.
+3. Create a draft release.
+4. Upload and attach one or more platform artifacts.
+5. Publish the release.
+
+Example:
+
+```bash
+express auth login \
+  --client-id YOUR_REGISTERED_CLIENT_ID
+
+express product create \
+  --publisher acme \
+  --body product.json
+
+express channel create \
+  --product PRODUCT_ID \
+  --body channel.json
+
+express release create \
+  --product PRODUCT_ID \
+  --body release.json
+
+express artifact upload \
+  --product PRODUCT_ID \
+  --version 1.4.0 \
+  --file ./client.tar.gz \
+  --platform macos \
+  --architecture arm64
+
+express release publish \
+  --product PRODUCT_ID \
+  --id RELEASE_ID
+```
+
+`artifact upload` automatically prepares the upload URL, calculates SHA-256, uploads the bytes, and attaches the artifact. Repeat it for each platform and architecture before publishing.
+
+## Interactive experience
+
+When connected to a terminal, `express` uses concise prompts for product, channel, and release creation when `--body` is omitted. Artifact uploads report preparation, upload, and attachment progress.
+
+Informational output is colorized automatically in terminals. JSON responses remain plain on stdout for scripting. Disable color with `NO_COLOR=1` or force a mode with:
+
+```bash
+EXPRESS_COLOR=always express apps list
+EXPRESS_COLOR=never express apps list
+```
+
+The CLI intentionally uses text-only output without emoji.
 
 ## Marketplace commands
 

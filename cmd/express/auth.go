@@ -2,10 +2,12 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +17,13 @@ import (
 	"src.solsynth.dev/sosys/distribution/internal/marketplace"
 )
 
+var promptReader = bufio.NewReader(os.Stdin)
+
 type storedAuth struct {
-	BaseURL string `json:"base_url"`
-	Token   string `json:"token"`
+	BaseURL        string `json:"base_url"`
+	Token          string `json:"token"`
+	RefreshToken   string `json:"refresh_token,omitempty"`
+	TokenExpiresAt int64  `json:"token_expires_at,omitempty"`
 }
 
 func authStorePath(explicit string) (string, error) {
@@ -80,7 +86,7 @@ func deleteStoredAuth(path string) error {
 	return nil
 }
 
-func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBaseURL, defaultToken string) error {
+func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBaseURL, defaultToken, defaultClientID, defaultDiscoveryURL, defaultScope string) error {
 	action, rest, err := requireAction(args, "auth")
 	if err != nil {
 		return err
@@ -88,6 +94,9 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 	fs := newCommand("auth "+action, rest, stderr)
 	token := fs.String("token", defaultToken, "Sphere access token")
 	baseURL := fs.String("base-url", defaultBaseURL, "DistributionCenter base URL")
+	clientID := fs.String("client-id", defaultClientID, "registered OAuth public client ID")
+	discoveryURL := fs.String("oidc-discovery-url", defaultDiscoveryURL, "OpenID Connect discovery URL")
+	scope := fs.String("scope", defaultScope, "OAuth scope")
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
@@ -109,19 +118,31 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 			*baseURL = stored.BaseURL
 		}
 		if strings.TrimSpace(*baseURL) == "" {
-			*baseURL, err = promptLine(stderr, "DistributionCenter URL: ")
-			if err != nil {
-				return err
-			}
+			*baseURL = defaultDistributionBaseURL
 		}
 		if strings.TrimSpace(*token) == "" {
 			*token = firstEnv("DISTRIBUTION_TOKEN", "SPHERE_ACCESS_TOKEN")
 		}
 		if strings.TrimSpace(*token) == "" {
-			*token, err = promptSecret(stderr, "Sphere access token: ")
-			if err != nil {
+			if strings.TrimSpace(*clientID) == "" {
+				*clientID = firstEnv("SOL_SYNTH_EXPRESS_CLIENT_ID", "OAUTH_CLIENT_ID")
+			}
+			httpClient := http.DefaultClient
+			oauthContext := context.Background()
+			tokenResponse, loginErr := deviceLogin(oauthContext, httpClient, *discoveryURL, *clientID, *scope, stderr)
+			if loginErr != nil {
+				return loginErr
+			}
+			*token = tokenResponse.AccessToken
+			if err := saveStoredAuth(path, storedAuth{
+				BaseURL:        strings.TrimSpace(*baseURL),
+				Token:          strings.TrimSpace(*token),
+				RefreshToken:   tokenResponse.RefreshToken,
+				TokenExpiresAt: tokenExpiry(tokenResponse.ExpiresIn),
+			}); err != nil {
 				return err
 			}
+			return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true,"method":"device"}`))
 		}
 		if strings.TrimSpace(*token) == "" {
 			return errors.New("token is required")
@@ -132,7 +153,7 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 		if err := saveStoredAuth(path, storedAuth{BaseURL: strings.TrimSpace(*baseURL), Token: strings.TrimSpace(*token)}); err != nil {
 			return err
 		}
-		return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true}`))
+		return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true,"method":"token"}`))
 	case "status":
 		stored, err := loadStoredAuth(path)
 		if err != nil {
@@ -148,10 +169,14 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 		if base == "" {
 			base = stored.BaseURL
 		}
+		if base == "" {
+			base = defaultDistributionBaseURL
+		}
 		status, err := json.Marshal(map[string]any{
 			"authenticated": source != "none",
 			"base_url":      base,
 			"token_source":  source,
+			"token_expires": stored.TokenExpiresAt,
 		})
 		if err != nil {
 			return err
@@ -171,7 +196,7 @@ func promptLine(out io.Writer, prompt string) (string, error) {
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return "", err
 	}
-	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	line, err := promptReader.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return "", fmt.Errorf("read prompt: %w", err)
 	}

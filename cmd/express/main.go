@@ -1,4 +1,4 @@
-// Command distributionctl manages DistributionCenter marketplace products and releases.
+// Command express manages DistributionCenter marketplace products and releases.
 package main
 
 import (
@@ -20,13 +20,14 @@ import (
 	"src.solsynth.dev/sosys/distribution/internal/marketplace"
 )
 
+const defaultDistributionBaseURL = "https://api.solian.app/dist"
 const usage = `express manages Solsynth Express marketplace resources.
 
 Usage:
   express [global flags] <resource> <action> [flags]
 
 Authentication:
-  express auth login       Prompt for and securely store credentials
+  express auth login       Browser-based OAuth device login with PKCE
   express auth status      Show credential source without exposing token
   express auth logout      Remove stored credentials
 
@@ -48,7 +49,7 @@ DISTRIBUTION_TOKEN / SPHERE_ACCESS_TOKEN.
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
-		fmt.Fprintln(os.Stderr, "express:", err)
+		fmt.Fprintln(os.Stderr, colorize(os.Stderr, ansiRed+ansiBold, "express: "+err.Error()))
 		os.Exit(1)
 	}
 }
@@ -59,6 +60,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	baseURL := global.String("base-url", "", "DistributionCenter base URL")
 	token := global.String("token", "", "Sphere access token or product upload key")
 	configPath := global.String("config", "", "credential file path")
+	clientID := global.String("client-id", firstEnv("SOL_SYNTH_EXPRESS_CLIENT_ID", "OAUTH_CLIENT_ID"), "registered OAuth public client ID")
+	discoveryURL := global.String("oidc-discovery-url", firstEnv("SOL_SYNTH_EXPRESS_OIDC_DISCOVERY_URL", "OIDC_DISCOVERY_URL", defaultOIDCDiscoveryURL), "OpenID Connect discovery URL")
+	scope := global.String("scope", "*", "OAuth scope")
 	timeout := global.Duration("timeout", 30*time.Second, "HTTP request timeout (0 disables timeout)")
 	help := global.Bool("help", false, "show help")
 	if err := global.Parse(args); err != nil {
@@ -71,7 +75,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if remaining[0] == "auth" {
-		return authCommand(remaining[1:], stdout, stderr, *configPath, *baseURL, *token)
+		return authCommand(remaining[1:], stdout, stderr, *configPath, *baseURL, *token, *clientID, *discoveryURL, *scope)
 	}
 
 	storePath, err := authStorePath(*configPath)
@@ -90,7 +94,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 		resolvedBaseURL = stored.BaseURL
 	}
 	if resolvedBaseURL == "" {
-		return errors.New("--base-url, SOL_SYNTH_EXPRESS_URL, or auth login is required")
+		resolvedBaseURL = defaultDistributionBaseURL
 	}
 	resolvedToken := strings.TrimSpace(*token)
 	if resolvedToken == "" {
@@ -267,10 +271,12 @@ func productCommand(ctx context.Context, client *marketplace.Client, args []stri
 		}
 		return outputJSON(stdout, raw)
 	case "create":
-		if err := requireValue("publisher", *publisher); err != nil {
+		prompted, err := valueOrPrompt(stderr, "publisher", *publisher, "Publisher name")
+		if err != nil {
 			return err
 		}
-		body, err := bodyFromFlag(*bodyPath)
+		*publisher = prompted
+		body, err := bodyFromFlagOrPrompt(*bodyPath, stderr, promptProductBody)
 		if err != nil {
 			return err
 		}
@@ -317,9 +323,11 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	if err := requireValue("product", *product); err != nil {
+	promptedProduct, err := valueOrPrompt(stderr, "product", *product, "Product ID")
+	if err != nil {
 		return err
 	}
+	*product = promptedProduct
 	switch action {
 	case "list":
 		raw, err := client.ListChannels(ctx, *product)
@@ -328,7 +336,7 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 		}
 		return outputJSON(stdout, raw)
 	case "create":
-		body, err := bodyFromFlag(*bodyPath)
+		body, err := bodyFromFlagOrPrompt(*bodyPath, stderr, promptChannelBody)
 		if err != nil {
 			return err
 		}
@@ -380,9 +388,11 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	if err := requireValue("product", *product); err != nil {
+	promptedProduct, err := valueOrPrompt(stderr, "product", *product, "Product ID")
+	if err != nil {
 		return err
 	}
+	*product = promptedProduct
 	switch action {
 	case "list", "manage":
 		query := url.Values{"limit": {strconv.Itoa(*limit)}, "offset": {strconv.Itoa(*offset)}}
@@ -401,7 +411,7 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		}
 		return outputJSON(stdout, raw)
 	case "create":
-		body, err := bodyFromFlag(*bodyPath)
+		body, err := bodyFromFlagOrPrompt(*bodyPath, stderr, promptReleaseBody)
 		if err != nil {
 			return err
 		}
@@ -473,9 +483,11 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	if err := requireValue("product", *product); err != nil {
+	promptedProduct, err := valueOrPrompt(stderr, "product", *product, "Product ID")
+	if err != nil {
 		return err
 	}
+	*product = promptedProduct
 	switch action {
 	case "attach":
 		if err := requireValue("release", *release); err != nil {
@@ -491,12 +503,16 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 		}
 		return outputJSON(stdout, raw)
 	case "upload":
-		if err := requireValue("file", *filePath); err != nil {
+		promptedFile, err := valueOrPrompt(stderr, "file", *filePath, "Artifact file path")
+		if err != nil {
 			return err
 		}
-		if err := requireValue("version", *version); err != nil {
+		*filePath = promptedFile
+		promptedVersion, err := valueOrPrompt(stderr, "version", *version, "Release version")
+		if err != nil {
 			return err
 		}
+		*version = promptedVersion
 		if *fileName == "" {
 			*fileName = filepath.Base(*filePath)
 		}
@@ -515,6 +531,7 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 		if err != nil {
 			return err
 		}
+		_ = statusLine(stderr, ansiCyan, fmt.Sprintf("Preparing upload for %s (%d bytes)...", *fileName, size))
 		preparation, err := client.PrepareUpload(ctx, *product, map[string]any{"file_name": *fileName, "mime_type": *mimeType, "sha256": digest, "channel": *channel, "version": *version})
 		if err != nil {
 			return err
@@ -522,6 +539,7 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 		if err := client.PutArtifact(ctx, preparation.UploadURL, *fileName, *mimeType, digest, file, size); err != nil {
 			return err
 		}
+		_ = statusLine(stderr, ansiGreen, "Artifact uploaded. Attaching it to the release...")
 		attachBody, err := json.Marshal(map[string]any{"object_key": preparation.ObjectKey, "platform": *platform, "architecture": *architecture})
 		if err != nil {
 			return err
@@ -530,6 +548,7 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 		if err != nil {
 			return err
 		}
+		_ = statusLine(stderr, ansiGreen+ansiBold, "Artifact attached successfully.")
 		return outputJSON(stdout, raw)
 	default:
 		return fmt.Errorf("unknown artifact action %q", action)

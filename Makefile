@@ -4,7 +4,7 @@ SERVICE := distribution
 
 build-cli build-express:
 	mkdir -p bin
-	go build -o bin/express ./cmd/distributionctl
+	go build -o bin/express ./cmd/express
 
 run:
 	CONFIG_PATH=config.example.toml go run ./cmd/distribution
