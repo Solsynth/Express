@@ -49,6 +49,9 @@ DISTRIBUTION_TOKEN / SPHERE_ACCESS_TOKEN.
 
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0)
+		}
 		fmt.Fprintln(os.Stderr, colorize(os.Stderr, ansiRed+ansiBold, "express: "+err.Error()))
 		os.Exit(1)
 	}
@@ -60,7 +63,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 	baseURL := global.String("base-url", "", "DistributionCenter base URL")
 	token := global.String("token", "", "Sphere access token or product upload key")
 	configPath := global.String("config", "", "credential file path")
-	clientID := global.String("client-id", firstEnv("SOL_SYNTH_EXPRESS_CLIENT_ID", "OAUTH_CLIENT_ID"), "registered OAuth public client ID")
+	clientIDDefault := firstEnv("SOL_SYNTH_EXPRESS_CLIENT_ID", "OAUTH_CLIENT_ID")
+	if clientIDDefault == "" {
+		clientIDDefault = defaultOAuthClientID
+	}
+	clientID := global.String("client-id", clientIDDefault, "registered OAuth public client ID")
 	discoveryURL := global.String("oidc-discovery-url", firstEnv("SOL_SYNTH_EXPRESS_OIDC_DISCOVERY_URL", "OIDC_DISCOVERY_URL", defaultOIDCDiscoveryURL), "OpenID Connect discovery URL")
 	scope := global.String("scope", "*", "OAuth scope")
 	timeout := global.Duration("timeout", 30*time.Second, "HTTP request timeout (0 disables timeout)")

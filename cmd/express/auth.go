@@ -125,7 +125,7 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 		}
 		if strings.TrimSpace(*token) == "" {
 			if strings.TrimSpace(*clientID) == "" {
-				*clientID = firstEnv("SOL_SYNTH_EXPRESS_CLIENT_ID", "OAUTH_CLIENT_ID")
+				*clientID = defaultOAuthClientID
 			}
 			httpClient := http.DefaultClient
 			oauthContext := context.Background()

@@ -17,6 +17,8 @@ import (
 
 const defaultOIDCDiscoveryURL = "https://solian.app/.well-known/openid-configuration"
 
+const defaultOAuthClientID = "solsynth-express"
+
 type oidcConfiguration struct {
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
