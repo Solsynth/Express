@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"src.solsynth.dev/sosys/distribution/internal/service"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
 
 func TestNilBusIsSafe(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
 )
 
 func TestS3StorePresignedUploadSignsUploadHeaders(t *testing.T) {

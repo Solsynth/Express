@@ -12,8 +12,8 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
-	"src.solsynth.dev/sosys/distribution/internal/service"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
 
 type S3Store struct {

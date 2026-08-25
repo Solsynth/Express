@@ -15,9 +15,9 @@ import (
 	"github.com/gin-gonic/gin"
 	gen "src.solsynth.dev/sosys/go/proto"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
-	"src.solsynth.dev/sosys/distribution/internal/database"
-	"src.solsynth.dev/sosys/distribution/internal/service"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
 
 type createReleaseRequest struct {

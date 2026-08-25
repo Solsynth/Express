@@ -21,7 +21,7 @@ import (
 	"google.golang.org/grpc/status"
 	"gorm.io/gorm"
 
-	"src.solsynth.dev/sosys/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
 	gen "src.solsynth.dev/sosys/go/proto"
 )
 

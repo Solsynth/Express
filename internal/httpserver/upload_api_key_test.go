@@ -14,9 +14,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
-	"src.solsynth.dev/sosys/distribution/internal/database"
-	"src.solsynth.dev/sosys/distribution/internal/service"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 	gen "src.solsynth.dev/sosys/go/proto"
 )
 

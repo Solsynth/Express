@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/term"
 
-	"src.solsynth.dev/sosys/distribution/internal/marketplace"
+	"src.solsynth.dev/solsynth/distribution/internal/marketplace"
 )
 
 var promptReader = bufio.NewReader(os.Stdin)

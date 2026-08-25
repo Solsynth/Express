@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"src.solsynth.dev/sosys/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
 )
 
 func TestMultiChannelReleaseAndUpdateTelemetry(t *testing.T) {

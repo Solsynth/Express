@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
 )
 
 type DB struct {

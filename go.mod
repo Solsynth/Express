@@ -1,4 +1,4 @@
-module src.solsynth.dev/sosys/distribution
+module src.solsynth.dev/solsynth/distribution
 
 go 1.26.5
 

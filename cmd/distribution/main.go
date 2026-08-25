@@ -24,10 +24,10 @@ import (
 	"google.golang.org/grpc/reflection"
 	gen "src.solsynth.dev/sosys/go/proto"
 
-	"src.solsynth.dev/sosys/distribution/internal/app"
-	"src.solsynth.dev/sosys/distribution/internal/config"
-	"src.solsynth.dev/sosys/distribution/internal/discovery"
-	"src.solsynth.dev/sosys/distribution/internal/grpcserver"
+	"src.solsynth.dev/solsynth/distribution/internal/app"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/discovery"
+	"src.solsynth.dev/solsynth/distribution/internal/grpcserver"
 )
 
 var (

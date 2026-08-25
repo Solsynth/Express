@@ -4,7 +4,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
 )
 
 func TestHealthAndReadiness(t *testing.T) {

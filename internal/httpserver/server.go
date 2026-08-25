@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
 )
 
 // Server owns the HTTP router and readiness state.

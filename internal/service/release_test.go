@@ -5,7 +5,7 @@ import (
 	"errors"
 	"github.com/google/uuid"
 	"net/url"
-	"src.solsynth.dev/sosys/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
 	gen "src.solsynth.dev/sosys/go/proto"
 	"strings"
 	"testing"

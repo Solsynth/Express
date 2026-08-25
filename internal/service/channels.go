@@ -9,7 +9,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"src.solsynth.dev/sosys/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
 )
 
 func (s *ReleaseService) validateArtifactRetention(value *int) error {

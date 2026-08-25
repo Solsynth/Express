@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"src.solsynth.dev/sosys/distribution/internal/marketplace"
+	"src.solsynth.dev/solsynth/distribution/internal/marketplace"
 )
 
 const defaultDistributionBaseURL = "https://api.solian.app/dist"

@@ -7,12 +7,12 @@ import (
 	"google.golang.org/grpc"
 	gen "src.solsynth.dev/sosys/go/proto"
 
-	"src.solsynth.dev/sosys/distribution/internal/config"
-	"src.solsynth.dev/sosys/distribution/internal/database"
-	"src.solsynth.dev/sosys/distribution/internal/eventbus"
-	"src.solsynth.dev/sosys/distribution/internal/httpserver"
-	"src.solsynth.dev/sosys/distribution/internal/integration"
-	"src.solsynth.dev/sosys/distribution/internal/service"
+	"src.solsynth.dev/solsynth/distribution/internal/config"
+	"src.solsynth.dev/solsynth/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/eventbus"
+	"src.solsynth.dev/solsynth/distribution/internal/httpserver"
+	"src.solsynth.dev/solsynth/distribution/internal/integration"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
 
 type App struct {

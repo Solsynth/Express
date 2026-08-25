@@ -28,7 +28,7 @@ bin/express
 Install directly with Go:
 
 ```bash
-go install src.solsynth.dev/sosys/distribution/cmd/express@latest
+go install src.solsynth.dev/solsynth/distribution/cmd/express@latest
 ```
 
 This installs `express` into `GOBIN`, or `GOPATH/bin` when `GOBIN` is not set. Ensure that directory is on your `PATH`.

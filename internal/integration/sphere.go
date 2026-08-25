@@ -7,7 +7,7 @@ import (
 	"github.com/google/uuid"
 	gen "src.solsynth.dev/sosys/go/proto"
 
-	"src.solsynth.dev/sosys/distribution/internal/service"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
 
 // SphereDirectory is the narrow control-plane contract used by DistributionCenter.
