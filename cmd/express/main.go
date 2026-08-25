@@ -68,7 +68,11 @@ func run(args []string, stdout, stderr io.Writer) error {
 		clientIDDefault = defaultOAuthClientID
 	}
 	clientID := global.String("client-id", clientIDDefault, "registered OAuth public client ID")
-	discoveryURL := global.String("oidc-discovery-url", firstEnv("SOL_SYNTH_EXPRESS_OIDC_DISCOVERY_URL", "OIDC_DISCOVERY_URL", defaultOIDCDiscoveryURL), "OpenID Connect discovery URL")
+	discoveryURLDefault := firstEnv("SOL_SYNTH_EXPRESS_OIDC_DISCOVERY_URL", "OIDC_DISCOVERY_URL")
+	if discoveryURLDefault == "" {
+		discoveryURLDefault = defaultOIDCDiscoveryURL
+	}
+	discoveryURL := global.String("oidc-discovery-url", discoveryURLDefault, "OpenID Connect discovery URL")
 	scope := global.String("scope", "*", "OAuth scope")
 	timeout := global.Duration("timeout", 30*time.Second, "HTTP request timeout (0 disables timeout)")
 	help := global.Bool("help", false, "show help")

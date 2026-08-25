@@ -183,6 +183,9 @@ func oauthFormRequest(ctx context.Context, client *http.Client, endpoint string,
 }
 
 func deviceLogin(ctx context.Context, client *http.Client, discoveryURL, clientID, scope string, prompts io.Writer) (oauthTokenResponse, error) {
+	if strings.TrimSpace(discoveryURL) == "" {
+		discoveryURL = defaultOIDCDiscoveryURL
+	}
 	if strings.TrimSpace(clientID) == "" {
 		return oauthTokenResponse{}, errors.New("OAuth client ID is required; pass --client-id or set SOL_SYNTH_EXPRESS_CLIENT_ID")
 	}
