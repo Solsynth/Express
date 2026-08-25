@@ -79,7 +79,7 @@ func TestAuthLoginStoresDeviceToken(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "auth.json")
 	var output strings.Builder
-	args := []string{"--config", configPath, "--base-url", "https://distribution.example", "--client-id", "express-test", "--oidc-discovery-url", server.URL + "/.well-known/openid-configuration", "auth", "login"}
+	args := []string{"--config", configPath, "--base-url", "https://distribution.example", "--client-id", "express-test", "--oidc-discovery-url", server.URL + "/.well-known/openid-configuration", "--json", "auth", "login"}
 	if err := run(args, &output, io.Discard); err != nil {
 		t.Fatal(err)
 	}

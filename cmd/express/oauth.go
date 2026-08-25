@@ -20,6 +20,7 @@ const defaultOIDCDiscoveryURL = "https://solian.app/.well-known/openid-configura
 const defaultOAuthClientID = "solsynth-express"
 
 type oidcConfiguration struct {
+	Issuer                      string `json:"issuer"`
 	DeviceAuthorizationEndpoint string `json:"device_authorization_endpoint"`
 	TokenEndpoint               string `json:"token_endpoint"`
 }
@@ -230,4 +231,43 @@ func tokenExpiry(expiresIn int) int64 {
 		return 0
 	}
 	return time.Now().Add(time.Duration(expiresIn) * time.Second).Unix()
+}
+
+// fetchAccountProfile resolves the signed-in account via the identity
+// service's /stargate/accounts/me endpoint, discovered from the issuer.
+func fetchAccountProfile(ctx context.Context, client *http.Client, discoveryURL, token string) (map[string]any, error) {
+	configuration, err := discoverOIDC(ctx, client, discoveryURL)
+	if err != nil {
+		return nil, err
+	}
+	endpoint := strings.TrimRight(configuration.Issuer, "/") + "/stargate/accounts/me"
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, fmt.Errorf("create profile request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("request profile: %w", err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read profile: %w", err)
+	}
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return nil, fmt.Errorf("profile request returned %s", response.Status)
+	}
+	var profile map[string]any
+	if err := json.Unmarshal(body, &profile); err != nil {
+		return nil, fmt.Errorf("decode profile: %w", err)
+	}
+	return profile, nil
+}
+
+func profileString(profile map[string]any, key string) string {
+	if value, ok := profile[key].(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
 }

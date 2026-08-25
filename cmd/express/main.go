@@ -74,6 +74,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	discoveryURL := global.String("oidc-discovery-url", discoveryURLDefault, "OpenID Connect discovery URL")
 	scope := global.String("scope", "*", "OAuth scope")
+	pathPrefix := global.String("path-prefix", firstEnv("DISTRIBUTION_API_PATH_PREFIX"), "route prefix inserted after the base URL (empty by default; use /api for bare deployments)")
+	jsonOut := global.Bool("json", false, "print raw JSON instead of human-readable output")
 	timeout := global.Duration("timeout", 30*time.Second, "HTTP request timeout (0 disables timeout)")
 	help := global.Bool("help", false, "show help")
 	if err := global.Parse(args); err != nil {
@@ -86,7 +88,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 
 	if remaining[0] == "auth" {
-		return authCommand(remaining[1:], stdout, stderr, *configPath, *baseURL, *token, *clientID, *discoveryURL, *scope)
+		return authCommand(remaining[1:], stdout, stderr, *configPath, *baseURL, *token, *clientID, *discoveryURL, *scope, *jsonOut)
 	}
 
 	storePath, err := authStorePath(*configPath)
@@ -118,9 +120,10 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	client.PathPrefix = strings.Trim(*pathPrefix, "/")
 	ctx, cancel := marketplace.ContextWithTimeout(context.Background(), *timeout)
 	defer cancel()
-	return dispatch(ctx, client, remaining, stdout, stderr)
+	return dispatch(ctx, client, remaining, stdout, stderr, *jsonOut)
 }
 
 func firstEnv(keys ...string) string {
@@ -132,26 +135,26 @@ func firstEnv(keys ...string) string {
 	return ""
 }
 
-func dispatch(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func dispatch(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	switch args[0] {
 	case "apps":
-		return appsCommand(ctx, client, args[1:], stdout, stderr)
+		return appsCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "publisher-apps":
-		return publisherAppsCommand(ctx, client, args[1:], stdout, stderr)
+		return publisherAppsCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "product":
-		return productCommand(ctx, client, args[1:], stdout, stderr)
+		return productCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "channel":
-		return channelCommand(ctx, client, args[1:], stdout, stderr)
+		return channelCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "release":
-		return releaseCommand(ctx, client, args[1:], stdout, stderr)
+		return releaseCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "artifact":
-		return artifactCommand(ctx, client, args[1:], stdout, stderr)
+		return artifactCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "update":
-		return updateCommand(ctx, client, args[1:], stdout, stderr)
+		return updateCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "metrics":
-		return metricsCommand(ctx, client, args[1:], stdout, stderr)
+		return metricsCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "upload-key":
-		return uploadKeyCommand(ctx, client, args[1:], stdout, stderr)
+		return uploadKeyCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	default:
 		return fmt.Errorf("unknown resource %q; use --help", args[0])
 	}
@@ -212,7 +215,7 @@ func outputJSON(stdout io.Writer, raw []byte) error {
 
 func outputOK(stdout io.Writer) error { return outputJSON(stdout, []byte(`{"ok":true}`)) }
 
-func appsCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func appsCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "apps")
 	if err != nil {
 		return err
@@ -233,10 +236,10 @@ func appsCommand(ctx context.Context, client *marketplace.Client, args []string,
 	if err != nil {
 		return err
 	}
-	return outputJSON(stdout, raw)
+	return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderApps(w, raw, colorEnabled(stdout)) })
 }
 
-func publisherAppsCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func publisherAppsCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "publisher-apps")
 	if err != nil {
 		return err
@@ -256,10 +259,10 @@ func publisherAppsCommand(ctx context.Context, client *marketplace.Client, args 
 	if err != nil {
 		return err
 	}
-	return outputJSON(stdout, raw)
+	return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderApps(w, raw, colorEnabled(stdout)) })
 }
 
-func productCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func productCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "product")
 	if err != nil {
 		return err
@@ -280,7 +283,7 @@ func productCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderProductBare(w, raw, colorEnabled(stdout)) })
 	case "create":
 		prompted, err := valueOrPrompt(stderr, "publisher", *publisher, "Publisher name")
 		if err != nil {
@@ -295,7 +298,7 @@ func productCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderProductBare(w, raw, colorEnabled(stdout)) })
 	case "update":
 		if err := requireValue("id", *id); err != nil {
 			return err
@@ -308,7 +311,7 @@ func productCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderProductBare(w, raw, colorEnabled(stdout)) })
 	case "delete":
 		if err := requireValue("id", *id); err != nil {
 			return err
@@ -316,13 +319,13 @@ func productCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err := client.DeleteProduct(ctx, *id); err != nil {
 			return err
 		}
-		return outputOK(stdout)
+		return okLine(stdout, asJSON, "Product deleted.")
 	default:
 		return fmt.Errorf("unknown product action %q", action)
 	}
 }
 
-func channelCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func channelCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "channel")
 	if err != nil {
 		return err
@@ -345,7 +348,7 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderChannelDetail(w, raw, colorEnabled(stdout)) })
 	case "create":
 		body, err := bodyFromFlagOrPrompt(*bodyPath, stderr, promptChannelBody)
 		if err != nil {
@@ -355,7 +358,7 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderChannelDetail(w, raw, colorEnabled(stdout)) })
 	case "update":
 		if err := requireValue("id", *channel); err != nil {
 			return err
@@ -368,7 +371,7 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderChannelDetail(w, raw, colorEnabled(stdout)) })
 	case "delete":
 		if err := requireValue("id", *channel); err != nil {
 			return err
@@ -376,13 +379,13 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err := client.DeleteChannel(ctx, *product, *channel); err != nil {
 			return err
 		}
-		return outputOK(stdout)
+		return okLine(stdout, asJSON, "Channel deleted.")
 	default:
 		return fmt.Errorf("unknown channel action %q", action)
 	}
 }
 
-func releaseCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func releaseCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "release")
 	if err != nil {
 		return err
@@ -420,7 +423,7 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	case "create":
 		body, err := bodyFromFlagOrPrompt(*bodyPath, stderr, promptReleaseBody)
 		if err != nil {
@@ -430,7 +433,7 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	case "update":
 		if err := requireValue("id", *release); err != nil {
 			return err
@@ -443,7 +446,7 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	case "delete":
 		if err := requireValue("id", *release); err != nil {
 			return err
@@ -451,7 +454,7 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err := client.DeleteRelease(ctx, *product, *release); err != nil {
 			return err
 		}
-		return outputOK(stdout)
+		return okLine(stdout, asJSON, "Release deleted.")
 	case "publish":
 		if err := requireValue("id", *release); err != nil {
 			return err
@@ -460,7 +463,7 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	case "yank":
 		if err := requireValue("id", *release); err != nil {
 			return err
@@ -469,13 +472,13 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	default:
 		return fmt.Errorf("unknown release action %q", action)
 	}
 }
 
-func artifactCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func artifactCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "artifact")
 	if err != nil {
 		return err
@@ -512,7 +515,7 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	case "upload":
 		promptedFile, err := valueOrPrompt(stderr, "file", *filePath, "Artifact file path")
 		if err != nil {
@@ -560,13 +563,13 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 			return err
 		}
 		_ = statusLine(stderr, ansiGreen+ansiBold, "Artifact attached successfully.")
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderReleaseDetail(w, raw, colorEnabled(stdout)) })
 	default:
 		return fmt.Errorf("unknown artifact action %q", action)
 	}
 }
 
-func updateCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func updateCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "update")
 	if err != nil {
 		return err
@@ -607,7 +610,7 @@ func updateCommand(ctx context.Context, client *marketplace.Client, args []strin
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderUpdateCheck(w, raw, colorEnabled(stdout)) })
 	}
 	query := url.Values{"current_version": {*version}, "channel": {*channel}, "os": {*platform}, "architecture": {*architecture}}
 	if *installation != "" {
@@ -626,10 +629,10 @@ func updateCommand(ctx context.Context, client *marketplace.Client, args []strin
 	if err != nil {
 		return err
 	}
-	return outputJSON(stdout, raw)
+	return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderUpdateCheck(w, raw, colorEnabled(stdout)) })
 }
 
-func metricsCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func metricsCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	fs := newCommand("metrics", args, stderr)
 	product := fs.String("product", "", "product ID")
 	from := fs.String("from", "", "RFC3339 start time")
@@ -651,10 +654,10 @@ func metricsCommand(ctx context.Context, client *marketplace.Client, args []stri
 	if err != nil {
 		return err
 	}
-	return outputJSON(stdout, raw)
+	return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderMetrics(w, raw, colorEnabled(stdout)) })
 }
 
-func uploadKeyCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer) error {
+func uploadKeyCommand(ctx context.Context, client *marketplace.Client, args []string, stdout, stderr io.Writer, asJSON bool) error {
 	action, rest, err := requireAction(args, "upload-key")
 	if err != nil {
 		return err
@@ -675,7 +678,7 @@ func uploadKeyCommand(ctx context.Context, client *marketplace.Client, args []st
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderUploadKeys(w, raw, colorEnabled(stdout)) })
 	case "create":
 		if err := requireValue("name", *name); err != nil {
 			return err
@@ -688,7 +691,7 @@ func uploadKeyCommand(ctx context.Context, client *marketplace.Client, args []st
 		if err != nil {
 			return err
 		}
-		return outputJSON(stdout, raw)
+		return emit(stdout, asJSON, raw, func(w io.Writer) error { return renderUploadKeyCreated(w, raw, colorEnabled(stdout)) })
 	case "revoke":
 		if err := requireValue("id", *key); err != nil {
 			return err
@@ -696,7 +699,7 @@ func uploadKeyCommand(ctx context.Context, client *marketplace.Client, args []st
 		if err := client.RevokeUploadKey(ctx, *product, *key); err != nil {
 			return err
 		}
-		return outputOK(stdout)
+		return okLine(stdout, asJSON, "Upload key revoked.")
 	default:
 		return fmt.Errorf("unknown upload-key action %q", action)
 	}

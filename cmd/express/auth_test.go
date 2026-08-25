@@ -21,7 +21,7 @@ func TestAuthLoginStoresTokenAndAPIUsesIt(t *testing.T) {
 
 	configPath := filepath.Join(t.TempDir(), "auth.json")
 	var loginOutput strings.Builder
-	if err := run([]string{"--config", configPath, "auth", "login", "--base-url", server.URL, "--token", "stored-token"}, &loginOutput, io.Discard); err != nil {
+	if err := run([]string{"--config", configPath, "--json", "auth", "login", "--base-url", server.URL, "--token", "stored-token"}, &loginOutput, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(configPath)
@@ -33,7 +33,7 @@ func TestAuthLoginStoresTokenAndAPIUsesIt(t *testing.T) {
 	}
 
 	var output strings.Builder
-	if err := run([]string{"--config", configPath, "apps", "list"}, &output, io.Discard); err != nil {
+	if err := run([]string{"--config", configPath, "--json", "apps", "list"}, &output, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), `"total": 0`) {
@@ -41,7 +41,7 @@ func TestAuthLoginStoresTokenAndAPIUsesIt(t *testing.T) {
 	}
 
 	var status strings.Builder
-	if err := run([]string{"--config", configPath, "auth", "status"}, &status, io.Discard); err != nil {
+	if err := run([]string{"--config", configPath, "--json", "auth", "status"}, &status, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(status.String(), "stored-token") || !strings.Contains(status.String(), `"token_source": "config"`) {

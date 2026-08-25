@@ -13,7 +13,7 @@ import (
 
 func TestRunListsAppsWithGlobalAuthAndQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/marketplace/apps" {
+		if r.URL.Path != "/marketplace/apps" {
 			t.Fatalf("path = %s", r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer sphere-token" {
@@ -27,7 +27,7 @@ func TestRunListsAppsWithGlobalAuthAndQuery(t *testing.T) {
 	defer server.Close()
 
 	var output strings.Builder
-	if err := run([]string{"--base-url", server.URL, "--token", "sphere-token", "apps", "list", "--sort", "name", "--order", "asc"}, &output, io.Discard); err != nil {
+	if err := run([]string{"--base-url", server.URL, "--token", "sphere-token", "--json", "apps", "list", "--sort", "name", "--order", "asc"}, &output, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	var response struct {
@@ -43,7 +43,7 @@ func TestRunListsAppsWithGlobalAuthAndQuery(t *testing.T) {
 
 func TestRunCreatesProductFromJSONBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/publishers/acme/products" {
+		if r.Method != http.MethodPost || r.URL.Path != "/publishers/acme/products" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
 		}
 		if r.Header.Get("Authorization") != "Bearer token" {
@@ -64,7 +64,7 @@ func TestRunCreatesProductFromJSONBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	var output strings.Builder
-	if err := run([]string{"--base-url", server.URL, "--token", "token", "product", "create", "--publisher", "acme", "--body", bodyPath}, &output, io.Discard); err != nil {
+	if err := run([]string{"--base-url", server.URL, "--token", "token", "--json", "product", "create", "--publisher", "acme", "--body", bodyPath}, &output, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), `"id": "product-1"`) {
@@ -77,7 +77,7 @@ func TestRunUploadHashesPutsAndAttachesArtifact(t *testing.T) {
 	var attachedBody string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/products/p1/artifacts/upload-url":
+		case r.Method == http.MethodPost && r.URL.Path == "/products/p1/artifacts/upload-url":
 			_, _ = io.WriteString(w, `{"object_key":"artifacts/demo.tar.gz","upload_url":"`+"http://"+r.Host+`/s3-upload","release_id":"r1","version":"1.2.3"}`)
 		case r.Method == http.MethodPut && r.URL.Path == "/s3-upload":
 			uploaded = true
@@ -85,7 +85,7 @@ func TestRunUploadHashesPutsAndAttachesArtifact(t *testing.T) {
 				t.Errorf("sha256 metadata = %q", got)
 			}
 			w.WriteHeader(http.StatusOK)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/products/p1/releases/r1/artifacts":
+		case r.Method == http.MethodPost && r.URL.Path == "/products/p1/releases/r1/artifacts":
 			body, _ := io.ReadAll(r.Body)
 			attachedBody = string(body)
 			_, _ = io.WriteString(w, `{"id":"artifact-1"}`)
@@ -106,5 +106,31 @@ func TestRunUploadHashesPutsAndAttachesArtifact(t *testing.T) {
 	}
 	if !uploaded || !strings.Contains(attachedBody, `"object_key":"artifacts/demo.tar.gz"`) || !strings.Contains(attachedBody, `"platform":"macos"`) {
 		t.Fatalf("uploaded=%v attached=%s output=%s", uploaded, attachedBody, output.String())
+	}
+}
+
+func TestRunHumanOutputByDefault(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/marketplace/apps" {
+			t.Fatalf("path = %s", r.URL.Path)
+		}
+		_, _ = io.WriteString(w, `{"data":[{"product":{"id":"p1","name":"Demo","slug":"demo"},"publisher":{"id":"u1","name":"acme"},"latest":{"id":"r1","version":"1.4.0","status":"published","published_at":"2026-08-01T00:00:00Z"}}],"total":1,"limit":20,"offset":0}`)
+	}))
+	defer server.Close()
+
+	var human strings.Builder
+	if err := run([]string{"--config", filepath.Join(t.TempDir(), "none.json"), "--base-url", server.URL, "apps", "list"}, &human, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(human.String(), "NAME") || !strings.Contains(human.String(), "demo") || !strings.Contains(human.String(), "1.4.0") {
+		t.Fatalf("human output = %q", human.String())
+	}
+
+	var asJSON strings.Builder
+	if err := run([]string{"--config", filepath.Join(t.TempDir(), "none.json"), "--base-url", server.URL, "--json", "apps", "list"}, &asJSON, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(asJSON.String(), `"total": 1`) {
+		t.Fatalf("json output = %q", asJSON.String())
 	}
 }

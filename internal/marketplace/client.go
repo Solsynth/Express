@@ -18,8 +18,12 @@ import (
 )
 
 // Client calls the public and publisher-authenticated marketplace endpoints.
+// PathPrefix is inserted between BaseURL and each endpoint path. It stays
+// empty for gateways that mount the routes directly (for example a base URL
+// of https://host/dist) and can be set to "/api" for bare deployments.
 type Client struct {
 	BaseURL    string
+	PathPrefix string
 	Token      string
 	HTTPClient *http.Client
 }
@@ -30,9 +34,6 @@ func NewClient(baseURL, token string) (*Client, error) {
 	parsed, err := url.Parse(baseURL)
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("base URL must be an absolute HTTP(S) URL without query or fragment")
-	}
-	if strings.TrimRight(parsed.Path, "/") == "/api" || strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/api") {
-		return nil, fmt.Errorf("base URL must not include the /api path")
 	}
 	return &Client{BaseURL: baseURL, Token: strings.TrimSpace(token), HTTPClient: http.DefaultClient}, nil
 }
@@ -56,7 +57,11 @@ func (c *Client) Do(ctx context.Context, method, endpoint string, query url.Valu
 	if c == nil {
 		return nil, errors.New("marketplace client is nil")
 	}
-	requestURL := c.BaseURL + "/" + strings.TrimLeft(endpoint, "/")
+	requestURL := c.BaseURL
+	if prefix := strings.Trim(c.PathPrefix, "/"); prefix != "" {
+		requestURL += "/" + prefix
+	}
+	requestURL += "/" + strings.TrimLeft(endpoint, "/")
 	parsed, err := url.Parse(requestURL)
 	if err != nil {
 		return nil, fmt.Errorf("build marketplace URL: %w", err)
@@ -120,50 +125,50 @@ func segment(value string) string { return url.PathEscape(strings.TrimSpace(valu
 
 // ListMarketplaceApps lists public marketplace products.
 func (c *Client) ListMarketplaceApps(ctx context.Context, query url.Values) (json.RawMessage, error) {
-	return c.get(ctx, "/api/marketplace/apps", query)
+	return c.get(ctx, "/marketplace/apps", query)
 }
 
 // ListPublisherApps lists a publisher's public products.
 func (c *Client) ListPublisherApps(ctx context.Context, publisher string) (json.RawMessage, error) {
-	return c.get(ctx, "/api/publishers/"+segment(publisher)+"/apps", nil)
+	return c.get(ctx, "/publishers/"+segment(publisher)+"/apps", nil)
 }
 
 func (c *Client) GetProduct(ctx context.Context, product string) (json.RawMessage, error) {
-	return c.get(ctx, "/api/products/"+segment(product), nil)
+	return c.get(ctx, "/products/"+segment(product), nil)
 }
 
 func (c *Client) CreateProduct(ctx context.Context, publisher string, body []byte) (json.RawMessage, error) {
-	return c.post(ctx, "/api/publishers/"+segment(publisher)+"/products", body)
+	return c.post(ctx, "/publishers/"+segment(publisher)+"/products", body)
 }
 
 func (c *Client) UpdateProduct(ctx context.Context, product string, body []byte) (json.RawMessage, error) {
-	return c.put(ctx, "/api/products/"+segment(product), body)
+	return c.put(ctx, "/products/"+segment(product), body)
 }
 
 func (c *Client) DeleteProduct(ctx context.Context, product string) error {
-	_, err := c.delete(ctx, "/api/products/"+segment(product))
+	_, err := c.delete(ctx, "/products/"+segment(product))
 	return err
 }
 
 func (c *Client) ListChannels(ctx context.Context, product string) (json.RawMessage, error) {
-	return c.get(ctx, "/api/products/"+segment(product)+"/channels", nil)
+	return c.get(ctx, "/products/"+segment(product)+"/channels", nil)
 }
 
 func (c *Client) CreateChannel(ctx context.Context, product string, body []byte) (json.RawMessage, error) {
-	return c.post(ctx, "/api/products/"+segment(product)+"/channels", body)
+	return c.post(ctx, "/products/"+segment(product)+"/channels", body)
 }
 
 func (c *Client) UpdateChannel(ctx context.Context, product, channel string, body []byte) (json.RawMessage, error) {
-	return c.put(ctx, "/api/products/"+segment(product)+"/channels/"+segment(channel), body)
+	return c.put(ctx, "/products/"+segment(product)+"/channels/"+segment(channel), body)
 }
 
 func (c *Client) DeleteChannel(ctx context.Context, product, channel string) error {
-	_, err := c.delete(ctx, "/api/products/"+segment(product)+"/channels/"+segment(channel))
+	_, err := c.delete(ctx, "/products/"+segment(product)+"/channels/"+segment(channel))
 	return err
 }
 
 func (c *Client) ListReleases(ctx context.Context, product string, managed bool, query url.Values) (json.RawMessage, error) {
-	endpoint := "/api/products/" + segment(product) + "/releases"
+	endpoint := "/products/" + segment(product) + "/releases"
 	if managed {
 		endpoint += "/manage"
 	}
@@ -171,28 +176,28 @@ func (c *Client) ListReleases(ctx context.Context, product string, managed bool,
 }
 
 func (c *Client) CreateRelease(ctx context.Context, product string, body []byte) (json.RawMessage, error) {
-	return c.post(ctx, "/api/products/"+segment(product)+"/releases", body)
+	return c.post(ctx, "/products/"+segment(product)+"/releases", body)
 }
 
 func (c *Client) UpdateRelease(ctx context.Context, product, release string, body []byte) (json.RawMessage, error) {
-	return c.put(ctx, "/api/products/"+segment(product)+"/releases/"+segment(release), body)
+	return c.put(ctx, "/products/"+segment(product)+"/releases/"+segment(release), body)
 }
 
 func (c *Client) DeleteRelease(ctx context.Context, product, release string) error {
-	_, err := c.delete(ctx, "/api/products/"+segment(product)+"/releases/"+segment(release))
+	_, err := c.delete(ctx, "/products/"+segment(product)+"/releases/"+segment(release))
 	return err
 }
 
 func (c *Client) PublishRelease(ctx context.Context, product, release string) (json.RawMessage, error) {
-	return c.post(ctx, "/api/products/"+segment(product)+"/releases/"+segment(release)+"/publish", nil)
+	return c.post(ctx, "/products/"+segment(product)+"/releases/"+segment(release)+"/publish", nil)
 }
 
 func (c *Client) YankRelease(ctx context.Context, product, release string) (json.RawMessage, error) {
-	return c.post(ctx, "/api/products/"+segment(product)+"/releases/"+segment(release)+"/yank", nil)
+	return c.post(ctx, "/products/"+segment(product)+"/releases/"+segment(release)+"/yank", nil)
 }
 
 func (c *Client) AttachArtifact(ctx context.Context, product, release string, body []byte) (json.RawMessage, error) {
-	return c.post(ctx, "/api/products/"+segment(product)+"/releases/"+segment(release)+"/artifacts", body)
+	return c.post(ctx, "/products/"+segment(product)+"/releases/"+segment(release)+"/artifacts", body)
 }
 
 // UpdateCheckRequest is accepted by the POST update-check endpoint.
@@ -212,27 +217,27 @@ func (c *Client) CheckUpdate(ctx context.Context, product string, request Update
 	if err != nil {
 		return nil, fmt.Errorf("encode update check: %w", err)
 	}
-	return c.post(ctx, "/api/products/"+segment(product)+"/update/check", body)
+	return c.post(ctx, "/products/"+segment(product)+"/update/check", body)
 }
 
 func (c *Client) ResolveUpdate(ctx context.Context, product string, query url.Values) (json.RawMessage, error) {
-	return c.get(ctx, "/api/products/"+segment(product)+"/update", query)
+	return c.get(ctx, "/products/"+segment(product)+"/update", query)
 }
 
 func (c *Client) Metrics(ctx context.Context, product string, query url.Values) (json.RawMessage, error) {
-	return c.get(ctx, "/api/products/"+segment(product)+"/metrics", query)
+	return c.get(ctx, "/products/"+segment(product)+"/metrics", query)
 }
 
 func (c *Client) CreateUploadKey(ctx context.Context, product string, body []byte) (json.RawMessage, error) {
-	return c.post(ctx, "/api/products/"+segment(product)+"/upload-api-keys", body)
+	return c.post(ctx, "/products/"+segment(product)+"/upload-api-keys", body)
 }
 
 func (c *Client) ListUploadKeys(ctx context.Context, product string) (json.RawMessage, error) {
-	return c.get(ctx, "/api/products/"+segment(product)+"/upload-api-keys", nil)
+	return c.get(ctx, "/products/"+segment(product)+"/upload-api-keys", nil)
 }
 
 func (c *Client) RevokeUploadKey(ctx context.Context, product, key string) error {
-	_, err := c.delete(ctx, "/api/products/"+segment(product)+"/upload-api-keys/"+segment(key))
+	_, err := c.delete(ctx, "/products/"+segment(product)+"/upload-api-keys/"+segment(key))
 	return err
 }
 
@@ -249,7 +254,7 @@ func (c *Client) PrepareUpload(ctx context.Context, product string, request any)
 	if err != nil {
 		return UploadPreparation{}, fmt.Errorf("encode upload preparation: %w", err)
 	}
-	raw, err := c.post(ctx, "/api/products/"+segment(product)+"/artifacts/upload-url", body)
+	raw, err := c.post(ctx, "/products/"+segment(product)+"/artifacts/upload-url", body)
 	if err != nil {
 		return UploadPreparation{}, err
 	}

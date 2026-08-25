@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/term"
 
@@ -86,7 +87,7 @@ func deleteStoredAuth(path string) error {
 	return nil
 }
 
-func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBaseURL, defaultToken, defaultClientID, defaultDiscoveryURL, defaultScope string) error {
+func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBaseURL, defaultToken, defaultClientID, defaultDiscoveryURL, defaultScope string, asJSON bool) error {
 	action, rest, err := requireAction(args, "auth")
 	if err != nil {
 		return err
@@ -142,7 +143,12 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 			}); err != nil {
 				return err
 			}
-			return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true,"method":"device"}`))
+			if asJSON {
+				return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true,"method":"device"}`))
+			}
+			_ = statusLine(stdout, ansiGreen+ansiBold, "Authenticated via device flow.")
+			fmt.Fprintf(stdout, "Credentials stored at %s\n", path)
+			return nil
 		}
 		if strings.TrimSpace(*token) == "" {
 			return errors.New("token is required")
@@ -153,13 +159,22 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 		if err := saveStoredAuth(path, storedAuth{BaseURL: strings.TrimSpace(*baseURL), Token: strings.TrimSpace(*token)}); err != nil {
 			return err
 		}
-		return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true,"method":"token"}`))
+		if asJSON {
+			return outputJSON(stdout, []byte(`{"authenticated":true,"stored":true,"method":"token"}`))
+		}
+		_ = statusLine(stdout, ansiGreen+ansiBold, "Authenticated.")
+		fmt.Fprintf(stdout, "Credentials stored at %s\n", path)
+		return nil
 	case "status":
 		stored, err := loadStoredAuth(path)
 		if err != nil {
 			return err
 		}
 		source := "none"
+		tokenValue := firstEnv("DISTRIBUTION_TOKEN", "SPHERE_ACCESS_TOKEN")
+		if tokenValue == "" {
+			tokenValue = stored.Token
+		}
 		if firstEnv("DISTRIBUTION_TOKEN", "SPHERE_ACCESS_TOKEN") != "" {
 			source = "environment"
 		} else if stored.Token != "" {
@@ -172,21 +187,78 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 		if base == "" {
 			base = defaultDistributionBaseURL
 		}
-		status, err := json.Marshal(map[string]any{
-			"authenticated": source != "none",
-			"base_url":      base,
-			"token_source":  source,
-			"token_expires": stored.TokenExpiresAt,
-		})
-		if err != nil {
-			return err
+
+		var profile map[string]any
+		profileErr := error(nil)
+		if tokenValue != "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			profile, profileErr = fetchAccountProfile(ctx, http.DefaultClient, *discoveryURL, tokenValue)
 		}
-		return outputJSON(stdout, status)
+
+		if asJSON {
+			payload := map[string]any{
+				"authenticated": source != "none",
+				"base_url":      base,
+				"token_source":  source,
+				"token_expires": stored.TokenExpiresAt,
+			}
+			if profile != nil {
+				payload["profile"] = profile
+			}
+			if profileErr != nil {
+				payload["profile_error"] = profileErr.Error()
+			}
+			status, err := json.Marshal(payload)
+			if err != nil {
+				return err
+			}
+			return outputJSON(stdout, status)
+		}
+
+		authenticated := source != "none"
+		stateLine := "Authenticated: no"
+		if authenticated {
+			stateLine = "Authenticated: yes"
+		}
+		_ = statusLine(stdout, ansiBold, stateLine)
+		fmt.Fprintf(stdout, "Base URL:     %s\n", dash(base))
+		fmt.Fprintf(stdout, "Token source: %s\n", source)
+		if stored.TokenExpiresAt > 0 {
+			fmt.Fprintf(stdout, "Token expiry: %s\n", time.Unix(stored.TokenExpiresAt, 0).UTC().Format(time.RFC3339))
+		}
+		if authenticated && profile != nil {
+			name := profileString(profile, "nick")
+			if name == "" {
+				name = profileString(profile, "name")
+			}
+			if name == "" {
+				name = profileString(profile, "id")
+			}
+			email := profileString(profile, "email")
+			id := profileString(profile, "id")
+			summary := name
+			if email != "" && email != name {
+				summary += " <" + email + ">"
+			}
+			if id != "" && id != name {
+				summary += " (" + id + ")"
+			}
+			line := "Profile:      " + summary
+			_ = statusLine(stdout, ansiGreen, line)
+		} else if authenticated && profileErr != nil {
+			_ = statusLine(stderr, ansiYellow, "Token check failed: "+profileErr.Error())
+		}
+		return nil
 	case "logout":
 		if err := deleteStoredAuth(path); err != nil {
 			return err
 		}
-		return outputJSON(stdout, []byte(`{"authenticated":false,"stored":false}`))
+		if asJSON {
+			return outputJSON(stdout, []byte(`{"authenticated":false,"stored":false}`))
+		}
+		fmt.Fprintln(stdout, "Credentials removed.")
+		return nil
 	default:
 		return fmt.Errorf("unknown auth action %q; use login, status, or logout", action)
 	}
