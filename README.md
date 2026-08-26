@@ -175,6 +175,8 @@ express release publish \
 
 When connected to a terminal, `express` uses concise prompts for product, channel, and release creation when `--body` is omitted. Artifact uploads report preparation, upload, and attachment progress.
 
+Omitting `--product` on commands that need it (channel, release, artifact, update, metrics, upload-key) opens an interactive filterable product picker. Press `/` to filter by name, arrow keys to navigate, Enter to select, Esc to cancel. Omitting `--version` on artifact upload reads the current git tag.
+
 Informational output is colorized automatically in terminals. JSON responses remain plain on stdout for scripting. Disable color with `NO_COLOR=1` or force a mode with:
 
 ```bash
@@ -295,6 +297,10 @@ The upload command performs the complete S3 workflow:
 3. Upload the file with the required metadata headers.
 4. Attach the object to the release.
 
+`--version` defaults to the current git tag (leading `v` stripped) when
+omitted. `--platform` and `--architecture` default from the build host when
+omitted (`darwin` → `macos`, `amd64` → `x86_64`, and so on).
+
 ```bash
 express artifact upload \
   --product PRODUCT_ID \
@@ -302,6 +308,14 @@ express artifact upload \
   --file ./client.tar.gz \
   --platform macos \
   --architecture arm64
+```
+
+From a tagged git checkout, the same command simplifies to:
+
+```bash
+express artifact upload \
+  --product PRODUCT_ID \
+  --file ./client.tar.gz
 ```
 
 Use `--channel` when the version does not already exist:

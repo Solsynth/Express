@@ -337,11 +337,11 @@ func channelCommand(ctx context.Context, client *marketplace.Client, args []stri
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	promptedProduct, err := valueOrPrompt(stderr, "product", *product, "Product ID")
+	resolvedProduct, err := resolveProductValue(ctx, client, stderr, *product)
 	if err != nil {
 		return err
 	}
-	*product = promptedProduct
+	*product = resolvedProduct
 	switch action {
 	case "list":
 		raw, err := client.ListChannels(ctx, *product)
@@ -402,11 +402,11 @@ func releaseCommand(ctx context.Context, client *marketplace.Client, args []stri
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	promptedProduct, err := valueOrPrompt(stderr, "product", *product, "Product ID")
+	resolvedProduct, err := resolveProductValue(ctx, client, stderr, *product)
 	if err != nil {
 		return err
 	}
-	*product = promptedProduct
+	*product = resolvedProduct
 	switch action {
 	case "list", "manage":
 		query := url.Values{"limit": {strconv.Itoa(*limit)}, "offset": {strconv.Itoa(*offset)}}
@@ -497,11 +497,11 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	promptedProduct, err := valueOrPrompt(stderr, "product", *product, "Product ID")
+	resolvedProduct, err := resolveProductValue(ctx, client, stderr, *product)
 	if err != nil {
 		return err
 	}
-	*product = promptedProduct
+	*product = resolvedProduct
 	switch action {
 	case "attach":
 		if err := requireValue("release", *release); err != nil {
@@ -522,11 +522,23 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 			return err
 		}
 		*filePath = promptedFile
+		if strings.TrimSpace(*version) == "" {
+			*version = gitDefaultVersion(stderr)
+		}
 		promptedVersion, err := valueOrPrompt(stderr, "version", *version, "Release version")
 		if err != nil {
 			return err
 		}
 		*version = promptedVersion
+		if strings.TrimSpace(*platform) == "" {
+			*platform = defaultPlatform()
+		}
+		if strings.TrimSpace(*architecture) == "" {
+			*architecture = defaultArchitecture()
+		}
+		if strings.TrimSpace(*platform) == "" || strings.TrimSpace(*architecture) == "" {
+			return errors.New("platform and architecture are required; pass --platform and --architecture")
+		}
 		if *fileName == "" {
 			*fileName = filepath.Base(*filePath)
 		}
@@ -587,9 +599,11 @@ func updateCommand(ctx context.Context, client *marketplace.Client, args []strin
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	if err := requireValue("product", *product); err != nil {
+	resolvedProduct, err := resolveProductValue(ctx, client, stderr, *product)
+	if err != nil {
 		return err
 	}
+	*product = resolvedProduct
 	if action != "check" && action != "resolve" {
 		return fmt.Errorf("unknown update action %q", action)
 	}
@@ -640,9 +654,11 @@ func metricsCommand(ctx context.Context, client *marketplace.Client, args []stri
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	if err := requireValue("product", *product); err != nil {
+	resolvedProduct, err := resolveProductValue(ctx, client, stderr, *product)
+	if err != nil {
 		return err
 	}
+	*product = resolvedProduct
 	query := url.Values{}
 	if *from != "" {
 		query.Set("from", *from)
@@ -669,9 +685,11 @@ func uploadKeyCommand(ctx context.Context, client *marketplace.Client, args []st
 	if err := fs.Parse(rest); err != nil {
 		return err
 	}
-	if err := requireValue("product", *product); err != nil {
+	resolvedProduct, err := resolveProductValue(ctx, client, stderr, *product)
+	if err != nil {
 		return err
 	}
+	*product = resolvedProduct
 	switch action {
 	case "list":
 		raw, err := client.ListUploadKeys(ctx, *product)

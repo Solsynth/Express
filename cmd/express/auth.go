@@ -264,6 +264,19 @@ func authCommand(args []string, stdout, stderr io.Writer, configPath, defaultBas
 	}
 }
 
+// readStdinLine reads a line directly from os.Stdin, bypassing the cached
+// promptReader, so tests can swap stdin at runtime.
+func readStdinLine(out io.Writer, prompt string) (string, error) {
+	if _, err := fmt.Fprint(out, prompt); err != nil {
+		return "", err
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return "", fmt.Errorf("read prompt: %w", err)
+	}
+	return strings.TrimSpace(line), nil
+}
+
 func promptLine(out io.Writer, prompt string) (string, error) {
 	if _, err := fmt.Fprint(out, prompt); err != nil {
 		return "", err
