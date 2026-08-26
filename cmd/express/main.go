@@ -562,8 +562,17 @@ func artifactCommand(ctx context.Context, client *marketplace.Client, args []str
 		if err != nil {
 			return err
 		}
-		if err := client.PutArtifact(ctx, preparation.UploadURL, *fileName, *mimeType, digest, file, size); err != nil {
-			return err
+		if colorEnabled(stderr) && size > 0 {
+			uploadReader := newProgressReader(file, size, stderr)
+			if err := client.PutArtifact(ctx, preparation.UploadURL, *fileName, *mimeType, digest, uploadReader, size); err != nil {
+				fmt.Fprintln(stderr)
+				return err
+			}
+			clearProgressWriter(stderr)
+		} else {
+			if err := client.PutArtifact(ctx, preparation.UploadURL, *fileName, *mimeType, digest, file, size); err != nil {
+				return err
+			}
 		}
 		_ = statusLine(stderr, ansiGreen, "Artifact uploaded. Attaching it to the release...")
 		attachBody, err := json.Marshal(map[string]any{"object_key": preparation.ObjectKey, "platform": *platform, "architecture": *architecture})
