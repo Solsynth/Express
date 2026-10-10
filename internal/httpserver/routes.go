@@ -102,18 +102,34 @@ type ReleaseView struct {
 	Artifacts      []ArtifactView                  `json:"artifacts"`
 }
 
+// ArtifactView is the unauthenticated artifact representation. It carries only
+// what a downloader needs and deliberately omits the internal object key, size,
+// and content hash so the public catalog does not disclose the storage layout.
 type ArtifactView struct {
 	ID            string `json:"id"`
-	ObjectKey     string `json:"object_key"`
 	Platform      string `json:"platform"`
 	Architecture  string `json:"architecture"`
 	FileName      string `json:"file_name"`
 	MimeType      string `json:"mime_type"`
-	Size          int64  `json:"size"`
-	Hash          string `json:"hash"`
 	DownloadURL   string `json:"download_url"`
 	DownloadCount int64  `json:"download_count"`
 	Expired       bool   `json:"expired,omitempty"`
+}
+
+// ManagedArtifactView is the publisher-authenticated artifact representation.
+// It adds the internal fields publishers need to manage an artifact.
+type ManagedArtifactView struct {
+	ArtifactView
+	ObjectKey string `json:"object_key"`
+	Size      int64  `json:"size"`
+	Hash      string `json:"hash"`
+}
+
+// ManagedReleaseView is the publisher-authenticated release representation. Its
+// Artifacts field shadows the embedded public list with the full artifact view.
+type ManagedReleaseView struct {
+	ReleaseView
+	Artifacts []ManagedArtifactView `json:"artifacts"`
 }
 
 // RegisterPublisherRoutes registers the publisher-owned catalog contract.
@@ -412,6 +428,14 @@ func listReleasesWithMode(releases *service.ReleaseService, managed bool) gin.Ha
 			writeError(c, err)
 			return
 		}
+		if managed {
+			views := make([]ManagedReleaseView, 0, len(result.Data))
+			for _, release := range result.Data {
+				views = append(views, *managedReleaseView(release, releases))
+			}
+			c.JSON(http.StatusOK, gin.H{"data": views, "total": result.Total, "limit": result.Limit, "offset": result.Offset})
+			return
+		}
 		views := make([]ReleaseView, 0, len(result.Data))
 		for _, release := range result.Data {
 			views = append(views, *releaseView(release, releases))
@@ -616,7 +640,7 @@ func createRelease(releases *service.ReleaseService) gin.HandlerFunc {
 			writeError(c, err)
 			return
 		}
-		c.JSON(http.StatusCreated, releaseView(release, releases))
+		c.JSON(http.StatusCreated, managedReleaseView(release, releases))
 	}
 }
 
@@ -639,7 +663,7 @@ func addArtifact(releases *service.ReleaseService) gin.HandlerFunc {
 			writeError(c, err)
 			return
 		}
-		c.JSON(http.StatusCreated, releaseView(release, releases))
+		c.JSON(http.StatusCreated, managedReleaseView(release, releases))
 	}
 }
 
@@ -659,7 +683,7 @@ func updateRelease(releases *service.ReleaseService) gin.HandlerFunc {
 			writeError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, releaseView(release, releases))
+		c.JSON(http.StatusOK, managedReleaseView(release, releases))
 	}
 }
 func deleteRelease(releases *service.ReleaseService) gin.HandlerFunc {
@@ -679,7 +703,7 @@ func publishRelease(releases *service.ReleaseService) gin.HandlerFunc {
 			writeError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, releaseView(release, releases))
+		c.JSON(http.StatusOK, managedReleaseView(release, releases))
 	}
 }
 
@@ -690,7 +714,7 @@ func yankRelease(releases *service.ReleaseService) gin.HandlerFunc {
 			writeError(c, err)
 			return
 		}
-		c.JSON(http.StatusOK, releaseView(release, releases))
+		c.JSON(http.StatusOK, managedReleaseView(release, releases))
 	}
 }
 
@@ -970,6 +994,22 @@ func queryInt(c *gin.Context, key string, fallback int) (int, error) {
 	return parsed, nil
 }
 
+func artifactDownloadURL(release *database.Release, artifact database.ReleaseArtifact, store service.ArtifactDownloadStore) string {
+	if artifact.ExpiredAt != nil || release.Status != database.ReleaseStatusPublished {
+		return ""
+	}
+	if artifact.ObjectKey == "" && artifact.DownloadURL == "" {
+		return ""
+	}
+	downloadURL := "/artifacts/" + artifact.ID + "/download"
+	if provider, ok := store.(interface{ DownloadEndpointBaseURL() string }); ok {
+		if baseURL := strings.TrimRight(provider.DownloadEndpointBaseURL(), "/"); baseURL != "" {
+			downloadURL = baseURL + downloadURL
+		}
+	}
+	return downloadURL
+}
+
 func releaseView(release *database.Release, store service.ArtifactDownloadStore) *ReleaseView {
 	if release == nil {
 		return nil
@@ -986,17 +1026,33 @@ func releaseView(release *database.Release, store service.ArtifactDownloadStore)
 		view.Channels = append(view.Channels, channel.Name)
 	}
 	for _, artifact := range release.Artifacts {
-		expired := artifact.ExpiredAt != nil
-		downloadURL := ""
-		if !expired && release.Status == database.ReleaseStatusPublished && (artifact.ObjectKey != "" || artifact.DownloadURL != "") {
-			downloadURL = "/artifacts/" + artifact.ID + "/download"
-			if provider, ok := store.(interface{ DownloadEndpointBaseURL() string }); ok {
-				if baseURL := strings.TrimRight(provider.DownloadEndpointBaseURL(), "/"); baseURL != "" {
-					downloadURL = baseURL + downloadURL
-				}
-			}
-		}
-		view.Artifacts = append(view.Artifacts, ArtifactView{ID: artifact.ID, ObjectKey: artifact.ObjectKey, Platform: artifact.Platform, Architecture: artifact.Architecture, FileName: artifact.FileName, MimeType: artifact.MimeType, Size: artifact.Size, Hash: artifact.Hash, DownloadURL: downloadURL, DownloadCount: artifact.DownloadCount, Expired: expired})
+		view.Artifacts = append(view.Artifacts, ArtifactView{
+			ID:            artifact.ID,
+			Platform:      artifact.Platform,
+			Architecture:  artifact.Architecture,
+			FileName:      artifact.FileName,
+			MimeType:      artifact.MimeType,
+			DownloadURL:   artifactDownloadURL(release, artifact, store),
+			DownloadCount: artifact.DownloadCount,
+			Expired:       artifact.ExpiredAt != nil,
+		})
+	}
+	return view
+}
+
+func managedReleaseView(release *database.Release, store service.ArtifactDownloadStore) *ManagedReleaseView {
+	base := releaseView(release, store)
+	if base == nil {
+		return nil
+	}
+	view := &ManagedReleaseView{ReleaseView: *base, Artifacts: make([]ManagedArtifactView, 0, len(release.Artifacts))}
+	for i, artifact := range release.Artifacts {
+		view.Artifacts = append(view.Artifacts, ManagedArtifactView{
+			ArtifactView: base.Artifacts[i],
+			ObjectKey:    artifact.ObjectKey,
+			Size:         artifact.Size,
+			Hash:         artifact.Hash,
+		})
 	}
 	return view
 }

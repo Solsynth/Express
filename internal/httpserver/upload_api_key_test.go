@@ -246,3 +246,49 @@ func TestReleaseViewReportsExpiredArtifacts(t *testing.T) {
 		t.Fatalf("expired artifact view = %#v", view.Artifacts)
 	}
 }
+
+// TestReleaseViewsSplitPublicAndManagedArtifactFields pins the disclosure fix:
+// the unauthenticated view must not leak the object key, size, or hash, while
+// the publisher-authenticated view keeps them.
+func TestReleaseViewsSplitPublicAndManagedArtifactFields(t *testing.T) {
+	now := time.Now().UTC()
+	release := &database.Release{
+		ID: uuid.NewString(), AppID: uuid.NewString(), Version: "1.0.0",
+		Status: database.ReleaseStatusPublished, PublishedAt: &now,
+		Artifacts: []database.ReleaseArtifact{{
+			ID:           uuid.NewString(),
+			ObjectKey:    "artifacts/app/client.tar.gz",
+			FileName:     "client.tar.gz",
+			MimeType:     "application/gzip",
+			Size:         4096,
+			Hash:         "sha256-deadbeef",
+			Platform:     "macos",
+			Architecture: "arm64",
+		}},
+	}
+
+	publicBody, err := json.Marshal(releaseView(release, signedOnlyStore{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{`"object_key"`, `"hash"`, `"size"`} {
+		if strings.Contains(string(publicBody), forbidden) {
+			t.Fatalf("public release view leaked %s: %s", forbidden, publicBody)
+		}
+	}
+	for _, required := range []string{`"download_url":"/artifacts/`, `"file_name":"client.tar.gz"`, `"mime_type":"application/gzip"`, `"platform":"macos"`, `"architecture":"arm64"`} {
+		if !strings.Contains(string(publicBody), required) {
+			t.Fatalf("public release view missing %s: %s", required, publicBody)
+		}
+	}
+
+	managedBody, err := json.Marshal(managedReleaseView(release, signedOnlyStore{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{`"object_key":"artifacts/app/client.tar.gz"`, `"hash":"sha256-deadbeef"`, `"size":4096`} {
+		if !strings.Contains(string(managedBody), required) {
+			t.Fatalf("managed release view missing %s: %s", required, managedBody)
+		}
+	}
+}

@@ -267,7 +267,11 @@ Authorization: Bearer <Sphere access token>
 ```
 
 This returns draft, published, and yanked releases. The public
-`/releases` listing remains limited to published releases.
+`/releases` listing remains limited to published releases. The management
+listing keeps the internal artifact `object_key`, `size`, and `hash` fields;
+public release views (marketplace apps, products, channels, releases, and
+update responses) omit them and expose only the download URL and target
+metadata.
 
 Draft releases can be permanently removed. Published releases must be yanked
 instead:
