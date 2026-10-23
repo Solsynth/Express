@@ -3,7 +3,7 @@
 interface ImportMetaEnv {
   /** Base URL of the DistributionCenter API in development. */
   readonly VITE_API_TARGET?: string
-  /** Sign-in page of the identity host, for the shared-session hand-off. */
+  /** Sign-in page of the identity host, for the session hand-off. */
   readonly VITE_AUTH_URL?: string
   /** Origin of the drive's picker page. */
   readonly VITE_SNFS_URL?: string

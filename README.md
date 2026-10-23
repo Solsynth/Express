@@ -422,13 +422,8 @@ point a dev or self-hosted console at its own deployment: `VITE_SNFS_API_URL`
 and `VITE_SNFS_URL` (the origin serving the picker page, default
 `https://fs.solian.app`).
 
-The console depends on `@solsynth/sunkenland` from GitHub Packages, which
-authenticates every install. `web/.npmrc` reads `NODE_AUTH_TOKEN` from the
-environment, so a local or CI install needs a token with `read:packages`:
-
-```bash
-NODE_AUTH_TOKEN=$(gh auth token) bun install
-```
+Product art is drawn by `sk-media` from `@solsynth/sunkenland`, a public npm
+package — no registry token is needed.
 
 Run the console's own checks from `web/`:
 

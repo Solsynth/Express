@@ -3,11 +3,7 @@
 # ---- SPA build (web/) ----
 FROM oven/bun:1.4-alpine AS web
 WORKDIR /web
-# @solsynth/sunkenland lives on GitHub Packages, which authenticates every
-# install — public packages included. The token is a build arg, so it never
-# lands in a layer.
-COPY web/package.json web/bun.lock web/.npmrc ./
-ARG NODE_AUTH_TOKEN
+COPY web/package.json web/bun.lock ./
 RUN bun install --frozen-lockfile
 COPY web/ ./
 # Skip vue-tsc here: the build stage must not depend on a host-only TypeScript

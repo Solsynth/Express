@@ -38,12 +38,7 @@ jobs:
         with:
           context: .
           push: ${{ github.event_name != 'pull_request' }}
-          # GitHub Packages authenticates every install of
-          # @solsynth/sunkenland, so the SPA stage needs a token. It is a
-          # build arg rather than a secret mount: the stage only reads it for
-          # `bun install`, and the value never reaches the final image.
           build-args: |
-            NODE_AUTH_TOKEN=${{ secrets.GITHUB_TOKEN }}
             VERSION=${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
             GIT_COMMIT=${{ github.sha }}
           tags: |
