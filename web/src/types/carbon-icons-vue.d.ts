@@ -15,6 +15,7 @@ declare module '@carbon/icons-vue' {
   export const ChevronRight16: DefineComponent
   export const Close16: DefineComponent
   export const CloudUpload16: DefineComponent
+  export const Code16: DefineComponent
   export const Copy16: DefineComponent
   export const DataTable16: DefineComponent
   export const Download16: DefineComponent

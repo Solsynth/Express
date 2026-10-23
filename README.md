@@ -478,6 +478,11 @@ the release console that uploads artifacts and publishes versions. It is a Vue
 3 + Vite single-page app served by DistributionCenter itself: a persistent top
 bar, and a publisher/product sidebar on the console routes where the
 navigation tree exists.
+It also carries the developer portal: the publishers the account enrolled as
+developers, their projects, and each project's custom apps, app products, bot
+accounts, and mini apps. The portal is gated on the
+`app.solian.develop.*` module set, so a deployment with every module disabled
+never mounts a portal route and the console hides the entry point.
 
 Build it into `web/dist`:
 

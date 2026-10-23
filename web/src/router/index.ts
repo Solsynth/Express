@@ -52,6 +52,21 @@ const router = createRouter({
       meta: { titleKey: 'app.titles.release', sidebar: true },
     },
     {
+      // The developer portal is its own tree: a publisher enrolled as a
+      // developer, then the projects under it. It is not a product console,
+      // so it carries no sidebar.
+      path: '/developer',
+      name: 'developer',
+      component: () => import('@/views/portal/DeveloperView.vue'),
+      meta: { titleKey: 'app.titles.developer' },
+    },
+    {
+      path: '/developer/:name',
+      name: 'developer-project',
+      component: () => import('@/views/portal/ProjectView.vue'),
+      meta: { titleKey: 'app.titles.developerProject' },
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'not-found',
       component: () => import('@/views/NotFoundView.vue'),

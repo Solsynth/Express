@@ -60,6 +60,16 @@ for it. A channel is not a "track" and an artifact is not a "build".
 | `/workspace/:productId` | the console: overview, releases, channels, keys, metrics, sync |
 | `/workspace/:productId/releases/:releaseId` | one release: artifacts, notes, metadata |
 
+The developer portal is the other tree in this console: a publisher enrolled as
+a developer, then the projects under it, then each project's apps, bots, and
+mini apps. It shares the shell, the palette, and the components, but not the
+sidebar — it is a tree of its own, so its pages use the full width.
+
+| Route | Content |
+| --- | --- |
+| `/developer` | the developers the account belongs to, plus the publishers it can enroll |
+| `/developer/:name` | one developer: projects, and a tab per portal area |
+
 The console is **one route with tabs**, not one route per tab: the tabs switch
 state, so a reload lands back on the same product rather than on a tab whose
 product has to be re-resolved. The release detail is its own route because it
@@ -231,3 +241,40 @@ a Chinese console.
    is hidden rather than failing with 403.
 6. Add copy to both locale modules with identical key shapes.
 7. Run `bun run type-check` and `bun run build-only` in `web/`.
+
+## 10. Developer portal screens
+
+The portal reuses every rule above. Four things are different.
+
+**Scope travels with the request.** Every private portal route names the
+developer and the project it acts for, as the `dev` and `proj` query
+parameters. `lib/api/portal.ts` reads them from a `PortalScope` —
+`{ dev, proj }` — and threads them into every call, so a panel never builds a
+query string by hand. A panel takes `scope: PortalScope | null` and renders
+`t('portal.scopeMissing')` when it is null rather than calling the API with a
+half-formed scope.
+
+**The permission nodes are the portal's own.** They are `developers.create`,
+`dev.projects.*`, `custom.apps.*`, `bot.accounts.*`, `app.products.*`, and
+`mini.apps.*`. The server lists them in `PortalPermissions`, which the process
+appends to the console's own session lookup, so `session.can()` answers them
+exactly as it answers `distribution.releases.publish`.
+
+**A step-up refusal is a prompt, not an error.** Deleting an app, managing a
+secret, and every bot API-key route require an elevated session. The server
+answers 403 with the code `AUTH_SUDO_REQUIRED` and the factors an account may
+use to elevate. `ExpressError` carries both as `code` and `factorTypes`, and
+its `needsElevation` getter distinguishes this from an ordinary refusal. The
+identity host owns the elevation flow; the console links there rather than
+re-implementing it.
+
+**A portal listing is a bare array.** The portal reports a total in the
+`X-Total` header instead of the marketplace's `{ data, total, limit, offset }`
+envelope, so a portal list uses `requestWithTotal()` from `lib/api/client.ts`.
+Every list route the portal serves answers `[]`, never `null`, when empty.
+
+Portal copy lives in `web/src/locales/{en,zh-CN}/portal.ts` under the
+`portal`, `portalApps`, `portalSecrets`, `portalBoard`, `portalProducts`,
+`portalBots`, and `portalMiniApps` namespaces. Only `app.titles.*` and
+`app.nav.*` are added to the console catalogs, because the shell owns the
+navigation and the document title.

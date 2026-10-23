@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import {
   Catalog16,
   Close16,
+  Code16,
   Menu16,
   Moon16,
   Sun16,
@@ -16,6 +17,7 @@ import { useNoticeStore } from '@/stores/notice'
 import { useSessionStore } from '@/stores/session'
 import { useUiStore } from '@/stores/ui'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useModulesStore, MODULES } from '@/stores/modules'
 import { applyRouteTitle } from '@/router'
 import { signInUrl } from '@/lib/auth'
 import { localized } from '@/lib/format'
@@ -26,13 +28,27 @@ const session = useSessionStore()
 const notice = useNoticeStore()
 const ui = useUiStore()
 const workspace = useWorkspaceStore()
+const modules = useModulesStore()
 const { t, locale } = useI18n()
 const route = useRoute()
 
-const primaryNav = [
-  { to: '/marketplace', labelKey: 'app.nav.catalog', icon: Catalog16 },
-  { to: '/workspace', labelKey: 'app.nav.workspace', icon: Workspace16 },
-]
+/**
+ * The shell's destinations. The developer portal is a module: a deployment
+ * with every `app.solian.develop.*` module disabled serves no portal route,
+ * so the entry point is dropped rather than left to 404. The lookup is
+ * fail-open — before `/api/modules` answers, every surface stays offered, and
+ * the portal's own pages refuse what they cannot serve.
+ */
+const primaryNav = computed(() => {
+  const items = [
+    { to: '/marketplace', labelKey: 'app.nav.catalog', icon: Catalog16 },
+    { to: '/workspace', labelKey: 'app.nav.workspace', icon: Workspace16 },
+  ]
+  if (modules.has(MODULES.developers)) {
+    items.push({ to: '/developer', labelKey: 'app.nav.developer', icon: Code16 })
+  }
+  return items
+})
 
 /** The product whose console is open, so the sidebar can mark it. */
 const activeProductId = computed(() =>
@@ -102,6 +118,10 @@ watch(locale, () => applyRouteTitle(route.meta))
 
 onMounted(() => {
   document.addEventListener('click', closeMenus)
+  // The module set gates the shell's own navigation, so it is resolved with
+  // the session rather than in the view that first needs it. `GET /api/modules`
+  // is anonymous, so the two do not have to wait on each other.
+  void modules.load()
   void session.boot().then(() => void workspace.load())
 })
 onBeforeUnmount(() => document.removeEventListener('click', closeMenus))

@@ -7,6 +7,11 @@ import type { ModuleState } from '@/lib/api/types'
 /** Module IDs the console gates surfaces on. */
 export const MODULES = {
   sync: 'app.solian.distribution.sync',
+  developers: 'app.solian.develop.developers',
+  apps: 'app.solian.develop.apps',
+  bots: 'app.solian.develop.bots',
+  miniapps: 'app.solian.develop.miniapps',
+  products: 'app.solian.develop.products',
 } as const
 
 /**
@@ -19,6 +24,9 @@ export const useModulesStore = defineStore('modules', () => {
   const modules = ref<ModuleState[]>([])
   const loaded = ref(false)
 
+  /** The in-flight lookup, shared so the shell and a view do not both fetch. */
+  let loading: Promise<void> | null = null
+
   const ids = computed(() => new Set(modules.value.map((module) => module.id)))
 
   function has(id: string): boolean {
@@ -30,15 +38,21 @@ export const useModulesStore = defineStore('modules', () => {
     return list.every(has)
   }
 
-  async function load() {
-    try {
-      const state = await modulesApi.state()
-      modules.value = state.modules ?? []
-      loaded.value = true
-    } catch {
-      modules.value = []
-      loaded.value = false
-    }
+  function load(): Promise<void> {
+    if (loading) return loading
+    loading = (async () => {
+      try {
+        const state = await modulesApi.state()
+        modules.value = state.modules ?? []
+        loaded.value = true
+      } catch {
+        modules.value = []
+        loaded.value = false
+      } finally {
+        loading = null
+      }
+    })()
+    return loading
   }
 
   return { modules, loaded, ids, has, hasAll, load }
