@@ -62,6 +62,10 @@ type Factory struct {
 	// Capabilities are exposed through GET /api/modules.
 	Capabilities []string
 
+	// Importer optionally migrates legacy rows into this module's schema. It
+	// is invoked by cmd/distribution-import, never at startup.
+	Importer func() Importer
+
 	New func() Instance
 }
 

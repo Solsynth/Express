@@ -224,8 +224,52 @@ maxBytes = 5242880
 ## Data migration
 
 The portal uses the process database (`[database] dsn`). To take over an
-existing Develop deployment, dump `dyson_develop` and restore its tables into
-the DistributionCenter database before enabling the modules: `developers`,
-`dev_projects`, `custom_apps`, `custom_app_secrets`, `board_widgets`,
-`bot_accounts`, `bot_chat_configs`, `mini_apps`, `app_products`, and
-`app_product_states`. `AutoMigrate` then reconciles the schema.
+existing Develop deployment, run the importer:
+
+```bash
+# Dry run first: reads and validates every row, writes nothing.
+PGPASSWORD=… PGDRY=1 ./scripts/import-develop.sh
+
+# Then for real.
+PGPASSWORD=… ./scripts/import-develop.sh
+```
+
+The script builds `cmd/distribution-import`, defaults the databases to
+`dyson_develop` → `dyson_distribution`, and imports every portal module in
+dependency order: developers → projects → apps → bots/miniapps → products.
+
+```bash
+# One module only.
+./scripts/import-develop.sh --module app.solian.develop.apps
+
+# Or call the binary directly against any DSN.
+go run ./cmd/distribution-import \
+  --module all \
+  --source-dsn "postgres://…/dyson_develop" \
+  --target-dsn "postgres://…/dyson_distribution"
+```
+
+The importer:
+
+- **creates the target schema itself**, so it can run before the service has
+  ever started;
+- **is idempotent**: rows are inserted with `ON CONFLICT (id) DO NOTHING`, so a
+  re-run reports them as skipped instead of rewriting them;
+- **never truncates** and never invents a parent: a child whose parent is
+  absent from the target is skipped and counted, rather than written dangling;
+- **records its counters** per table in `module_import_state`;
+- **honours `--dry-run`**, which validates every row and reports what would be
+  written. A dry run shares one plan across modules, so a child module sees the
+  parent rows an earlier module would have written.
+
+Ten tables move: `developers`, `dev_projects`, `custom_apps`,
+`custom_app_secrets`, `board_widgets`, `bot_accounts`, `bot_chat_configs`,
+`mini_apps`, `app_products`, `app_product_states`.
+
+### OAuth clients
+
+Stargate also imports Develop's `custom_apps` into its own `oauth_apps` table,
+for the OIDC provider. That is a separate target and a separate script
+(`../Stargate/scripts/import-oauth-apps.sh`). Run both when taking over a
+deployment: the portal keeps the apps, Stargate keeps the OAuth client
+registry.

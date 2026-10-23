@@ -44,13 +44,14 @@ type portalInstance struct {
 	id string
 }
 
-func newFactory(spec portalModule, capability string) module.Factory {
+func newFactory(spec portalModule, capability string, importer func() module.Importer) module.Factory {
 	return module.Factory{
 		ID:             spec.id,
 		Kind:           module.KindFeature,
 		DefaultEnabled: true,
 		Models:         spec.models,
 		Capabilities:   []string{capability},
+		Importer:       importer,
 		New:            func() module.Instance { return &portalInstance{id: spec.id} },
 	}
 }
@@ -114,29 +115,34 @@ func appModels() []any {
 }
 
 func developersFactory() module.Factory {
-	return newFactory(portalModule{id: ModuleDevelopers, models: developerModels()}, "developers")
+	return newFactory(portalModule{id: ModuleDevelopers, models: developerModels()}, "developers",
+		func() module.Importer { return developersImporter() })
 }
 
 func appsFactory() module.Factory {
-	factory := newFactory(portalModule{id: ModuleApps, models: appModels()}, "custom-apps")
+	factory := newFactory(portalModule{id: ModuleApps, models: appModels()}, "custom-apps",
+		func() module.Importer { return appsImporter() })
 	factory.Requires = []string{ModuleDevelopers}
 	return factory
 }
 
 func botsFactory() module.Factory {
-	factory := newFactory(portalModule{id: ModuleBots, models: []any{&develop.BotAccount{}, &develop.BotChatConfig{}}}, "bots")
+	factory := newFactory(portalModule{id: ModuleBots, models: []any{&develop.BotAccount{}, &develop.BotChatConfig{}}}, "bots",
+		func() module.Importer { return botsImporter() })
 	factory.Requires = []string{ModuleDevelopers}
 	return factory
 }
 
 func miniAppsFactory() module.Factory {
-	factory := newFactory(portalModule{id: ModuleMiniApps, models: []any{&develop.MiniApp{}}}, "miniapps")
+	factory := newFactory(portalModule{id: ModuleMiniApps, models: []any{&develop.MiniApp{}}}, "miniapps",
+		func() module.Importer { return miniAppsImporter() })
 	factory.Requires = []string{ModuleDevelopers}
 	return factory
 }
 
 func productsFactory() module.Factory {
-	factory := newFactory(portalModule{id: ModuleProducts, models: []any{&develop.AppProduct{}, &develop.AppProductState{}}}, "app-products")
+	factory := newFactory(portalModule{id: ModuleProducts, models: []any{&develop.AppProduct{}, &develop.AppProductState{}}}, "app-products",
+		func() module.Importer { return productsImporter() })
 	factory.Requires = []string{ModuleApps}
 	return factory
 }

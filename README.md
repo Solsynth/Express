@@ -460,6 +460,17 @@ disabled = [
 served on the gRPC port while `app.solian.develop.apps` is enabled, which is the
 contract Passport and Wallet already call.
 
+To take over an existing Develop deployment, import its tables:
+
+```bash
+PGPASSWORD=… PGDRY=1 ./scripts/import-develop.sh   # dry run
+PGPASSWORD=… ./scripts/import-develop.sh           # for real
+```
+
+The importer is idempotent, never truncates, skips a child whose parent is
+absent, and records per-table counters in `module_import_state`. See
+`docs/DEVELOPER_PORTAL.md`.
+
 ## Web console
 
 `web/` is the publisher console: the marketplace, a publisher's products, and
