@@ -15,6 +15,7 @@
     "@carbon/icons-vue": "^10.139.0",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@solsynth/sunkenland": "0.2.1",
     "@tailwindcss/vite": "^4.3.3",
     "daisyui": "^5.7.50",
     "pinia": "^4.1.0",

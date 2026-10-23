@@ -101,10 +101,31 @@ onMounted(load)
     <LoadingSkeleton v-else-if="loading" :rows="5" variant="rows" />
 
     <template v-else-if="detail">
-      <!-- The download block drops below the identity on a phone: side by
-           side, both halves shrink and the product name breaks into a
-           three-word column. -->
-      <header class="mb-7 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
+      <!-- The hero image sits behind the header rather than above it, so the
+           product name is still the first thing read. It is a Drive URL from
+           another origin and carries no overlay of its own: a failed load
+           leaves the plain header, not a dark band. -->
+      <div
+        class="relative mb-7 overflow-hidden"
+        :class="detail.product.background?.id ? 'border border-line' : ''"
+      >
+        <sk-media
+          v-if="detail.product.background?.id"
+          :file="detail.product.background.id"
+          class="absolute inset-0 block h-full w-full opacity-60"
+        ></sk-media>
+        <div
+          class="relative"
+          :class="
+            detail.product.background?.id
+              ? 'bg-gradient-to-t from-base-100/95 to-base-100/40 p-5'
+              : ''
+          "
+        >
+          <!-- The download block drops below the identity on a phone: side by
+               side, both halves shrink and the product name breaks into a
+               three-word column. -->
+          <header class="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start">
         <AppMark :picture="detail.product.icon" :name="productName" size="lg" class="hidden sm:block" />
         <div class="min-w-0 flex-1">
           <h1 class="title text-xl text-base-content sm:text-2xl">{{ productName }}</h1>
@@ -132,16 +153,17 @@ onMounted(load)
             {{ t('product.download') }}
           </a>
         </div>
-      </header>
+          </header>
+        </div>
+      </div>
 
       <div v-if="detail.product.previews?.length" class="mb-6 flex gap-3 overflow-x-auto pb-1">
-        <img
+        <sk-media
           v-for="preview in detail.product.previews"
           :key="preview.id || preview.url"
-          :src="preview.url"
-          alt=""
-          class="h-40 w-auto shrink-0 border border-line object-cover"
-        />
+          :file="preview.id"
+          class="block h-40 w-64 shrink-0 border border-line"
+        ></sk-media>
       </div>
 
       <div class="space-y-6">

@@ -7,7 +7,7 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { catalogApi, productApi } from '@/lib/api'
 import type { ProductWrite } from '@/lib/api'
 import { ExpressError } from '@/lib/api/client'
-import type { ProductDetail } from '@/lib/api/types'
+import type { Product, ProductDetail } from '@/lib/api/types'
 import { count, localized, relative, target } from '@/lib/format'
 import { withViewTransition } from '@/lib/viewTransition'
 import { useModulesStore, MODULES } from '@/stores/modules'
@@ -20,6 +20,7 @@ import LoadingSkeleton from '@/components/LoadingSkeleton.vue'
 import IconButton from '@/components/IconButton.vue'
 import ConfirmAction from '@/components/ConfirmAction.vue'
 import AppMark from '@/components/AppMark.vue'
+import ArtworkPanel from '@/components/ArtworkPanel.vue'
 import SessionGate from '@/components/SessionGate.vue'
 import TabBox from '@/components/TabBox.vue'
 import type { Tab } from '@/components/tab'
@@ -154,6 +155,16 @@ async function save() {
   } finally {
     saving.value = false
   }
+}
+
+/**
+ * The artwork panel saves one slot at a time and hands back the product the
+ * write endpoint stored. Replacing the product in place keeps the panel's own
+ * previews in sync without re-fetching the release list around it.
+ */
+function applyProduct(product: Product) {
+  if (!detail.value) return
+  detail.value = { ...detail.value, product }
 }
 
 async function remove() {
@@ -327,6 +338,13 @@ onMounted(() => {
               </template>
               <p v-else class="voice text-[12px]">{{ t('workspace.noRelease') }}</p>
             </ConsolePanel>
+
+            <ArtworkPanel
+              :product="detail.product"
+              :can-manage="session.can('app.products.update')"
+              class="lg:col-span-2"
+              @updated="applyProduct"
+            />
 
             <ConsolePanel :title="t('console.quickStart')">
               <p class="voice">{{ t('console.quickStartBody') }}</p>

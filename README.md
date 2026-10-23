@@ -416,7 +416,21 @@ make web-dev      # terminal two, Vite on :5173
 ```
 
 `VITE_API_TARGET` overrides the dev proxy target and `VITE_AUTH_URL` the
-identity host's sign-in page. Run the console's own checks from `web/`:
+identity host's sign-in page. Product art is read from the drive, so two more
+point a dev or self-hosted console at its own deployment: `VITE_SNFS_API_URL`
+(the origin that answers `/drive/files/{id}`, default `https://api.solian.app`)
+and `VITE_SNFS_URL` (the origin serving the picker page, default
+`https://fs.solian.app`).
+
+The console depends on `@solsynth/sunkenland` from GitHub Packages, which
+authenticates every install. `web/.npmrc` reads `NODE_AUTH_TOKEN` from the
+environment, so a local or CI install needs a token with `read:packages`:
+
+```bash
+NODE_AUTH_TOKEN=$(gh auth token) bun install
+```
+
+Run the console's own checks from `web/`:
 
 ```bash
 bun run type-check && bun run test:unit --run && bun run build-only
