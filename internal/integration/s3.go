@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -69,6 +70,21 @@ func (s *S3Store) PresignedUpload(ctx context.Context, objectKey, mimeType, sha2
 
 func (s *S3Store) PresignedDownload(ctx context.Context, objectKey string) (*url.URL, error) {
 	return s.client.PresignedGetObject(ctx, s.bucket, objectKey, 24*time.Hour, nil)
+}
+
+// Open streams a stored object so outbound integrations can upload it to a
+// destination. The returned size comes from the object metadata.
+func (s *S3Store) Open(ctx context.Context, objectKey string) (io.ReadCloser, int64, error) {
+	object, err := s.client.GetObject(ctx, s.bucket, objectKey, minio.GetObjectOptions{})
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := object.Stat()
+	if err != nil {
+		_ = object.Close()
+		return nil, 0, err
+	}
+	return object, info.Size, nil
 }
 
 func (s *S3Store) Delete(ctx context.Context, objectKey string) error {

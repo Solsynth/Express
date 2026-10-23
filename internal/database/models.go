@@ -313,3 +313,64 @@ type ClientCheck struct {
 	ClientVersion string    `gorm:"size:128" json:"client_version"`
 	CheckedAt     time.Time `gorm:"index" json:"checked_at"`
 }
+
+// SyncConnection is a publisher-wide destination credential. Secret holds the
+// adapter secret sealed with the sync encryption key; it is never serialized
+// by the API.
+type SyncConnection struct {
+	ID          string    `gorm:"primaryKey;size:36" json:"id"`
+	PublisherID string    `gorm:"size:36;index;uniqueIndex:idx_sync_connection_scope,priority:1" json:"publisher_id"`
+	Provider    string    `gorm:"size:64;uniqueIndex:idx_sync_connection_scope,priority:2" json:"provider"`
+	Name        string    `gorm:"size:128;uniqueIndex:idx_sync_connection_scope,priority:3" json:"name"`
+	BaseURL     string    `gorm:"size:512" json:"base_url,omitempty"`
+	Secret      string    `gorm:"type:text" json:"-"`
+	CreatedBy   string    `gorm:"size:36" json:"created_by"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func (SyncConnection) TableName() string {
+	return "sync_connections"
+}
+
+// SyncLink maps one product to one destination repository. Channels filters
+// which release channels are mirrored: {"include":[...],"exclude":[...]}.
+type SyncLink struct {
+	ID           string     `gorm:"primaryKey;size:36" json:"id"`
+	ProductID    string     `gorm:"size:36;index;uniqueIndex:idx_sync_link_target,priority:1" json:"product_id"`
+	ConnectionID string     `gorm:"size:36;index;uniqueIndex:idx_sync_link_target,priority:2" json:"connection_id"`
+	Repository   string     `gorm:"size:255;uniqueIndex:idx_sync_link_target,priority:3" json:"repository"`
+	Channels     JSONMap    `gorm:"type:json" json:"channels,omitempty"`
+	Draft        bool       `json:"draft"`
+	Prerelease   bool       `json:"prerelease"`
+	Enabled      bool       `gorm:"not null;default:true" json:"enabled"`
+	LastSyncedAt *time.Time `json:"last_synced_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
+}
+
+func (SyncLink) TableName() string {
+	return "sync_links"
+}
+
+// SyncJob is one outbox delivery: a release status change mirrored to one
+// link. The unique index makes enqueueing idempotent.
+type SyncJob struct {
+	ID          string     `gorm:"primaryKey;size:36" json:"id"`
+	LinkID      string     `gorm:"size:36;index;uniqueIndex:idx_sync_job_identity,priority:1" json:"link_id"`
+	ReleaseID   string     `gorm:"size:36;uniqueIndex:idx_sync_job_identity,priority:2" json:"release_id"`
+	Action      string     `gorm:"size:16;uniqueIndex:idx_sync_job_identity,priority:3" json:"action"`
+	State       string     `gorm:"size:16;index" json:"state"`
+	Attempts    int        `gorm:"not null;default:0" json:"attempts"`
+	NextAttempt time.Time  `gorm:"index" json:"next_attempt_at"`
+	LockedUntil *time.Time `json:"locked_until_at,omitempty"`
+	ExternalURL string     `gorm:"size:512" json:"external_url,omitempty"`
+	ExternalID  string     `gorm:"size:128" json:"external_id,omitempty"`
+	LastError   string     `gorm:"type:text" json:"last_error,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+func (SyncJob) TableName() string {
+	return "sync_jobs"
+}

@@ -175,6 +175,22 @@ func (s *ReleaseService) DeleteProduct(ctx context.Context, productID string) er
 				return fmt.Errorf("delete upload API keys: %w", err)
 			}
 		}
+		// Sync tables exist only where the sync module is enabled; deleting a
+		// product must not fail on a deployment without them.
+		if tx.Migrator().HasTable(&database.SyncLink{}) {
+			var linkIDs []string
+			if err := tx.Model(&database.SyncLink{}).Where("product_id = ?", product.ID).Pluck("id", &linkIDs).Error; err != nil {
+				return fmt.Errorf("list product sync links: %w", err)
+			}
+			if len(linkIDs) > 0 && tx.Migrator().HasTable(&database.SyncJob{}) {
+				if err := tx.Where("link_id IN ?", linkIDs).Delete(&database.SyncJob{}).Error; err != nil {
+					return fmt.Errorf("delete product sync jobs: %w", err)
+				}
+			}
+			if err := tx.Where("product_id = ?", product.ID).Delete(&database.SyncLink{}).Error; err != nil {
+				return fmt.Errorf("delete product sync links: %w", err)
+			}
+		}
 		var channels []database.Channel
 		if err := tx.Select("id").Where("app_id = ?", product.ID).Find(&channels).Error; err != nil {
 			return fmt.Errorf("list product channels: %w", err)

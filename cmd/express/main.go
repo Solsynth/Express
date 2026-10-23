@@ -41,6 +41,10 @@ Resources and actions:
   update check|resolve              Check for a published update
   metrics                           Read publisher metrics
   upload-key list|create|revoke     Manage product upload keys
+  sync connection list|create|update|delete   Manage provider connections
+  sync link list|create|update|delete         Link products to destinations
+  sync job list|retry                         Inspect and retry deliveries
+  sync providers                              List compiled-in adapters
 
 Mutation commands accept --body FILE for a JSON request body. Use --body - to
 read JSON from stdin. Tokens can come from auth login, --token, or
@@ -155,6 +159,8 @@ func dispatch(ctx context.Context, client *marketplace.Client, args []string, st
 		return metricsCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	case "upload-key":
 		return uploadKeyCommand(ctx, client, args[1:], stdout, stderr, asJSON)
+	case "sync":
+		return syncCommand(ctx, client, args[1:], stdout, stderr, asJSON)
 	default:
 		return fmt.Errorf("unknown resource %q; use --help", args[0])
 	}

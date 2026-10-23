@@ -70,7 +70,7 @@ func run(log *slog.Logger) error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	marketplaceApp, err := app.New(cfg)
+	marketplaceApp, err := app.New(cfg, log)
 	if err != nil {
 		return fmt.Errorf("initialize application: %w", err)
 	}

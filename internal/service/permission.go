@@ -23,6 +23,7 @@ const (
 	PermissionChannelsManage   = "distribution.channels.manage"
 	PermissionUploadKeysManage = "distribution.upload_keys.manage"
 	PermissionMetricsRead      = "distribution.metrics.read"
+	PermissionSyncManage       = "distribution.sync.manage"
 )
 
 var ErrPermissionDenied = errors.New("permission denied")

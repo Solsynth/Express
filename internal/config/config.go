@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -77,6 +78,33 @@ type Config struct {
 		Enabled bool   `toml:"enabled"`
 		Salt    string `toml:"salt"`
 	} `toml:"analytics"`
+
+	Modules struct {
+		Enabled  []string                  `toml:"enabled"`
+		Disabled []string                  `toml:"disabled"`
+		Settings map[string]map[string]any `toml:"settings"`
+	} `toml:"modules"`
+
+	// Ports selects the module that provides a shared port
+	// (port id -> module id).
+	Ports map[string]string `toml:"ports"`
+
+	Sync SyncConfig `toml:"sync"`
+}
+
+// SyncConfig tunes the release sync engine.
+type SyncConfig struct {
+	// EncryptionKey seals provider credentials at rest: base64 of a 32-byte
+	// key, or 64 hex characters. Required while the sync module is enabled.
+	EncryptionKey string `toml:"encryptionKey"`
+	// Durations are strings because go-toml/v2 has no time.Duration decoder;
+	// Validate parses them.
+	PollInterval  string `toml:"pollInterval"`
+	RetryBase     string `toml:"retryBase"`
+	RetryCap      string `toml:"retryCap"`
+	MaxAttempts   int    `toml:"maxAttempts"`
+	MaxAssetBytes int64  `toml:"maxAssetBytes"`
+	BatchSize     int    `toml:"batchSize"`
 }
 
 // Validate checks the required dependencies for the durable marketplace
@@ -112,6 +140,44 @@ func (c *Config) Validate() error {
 	if c.Releases.ArtifactRetention < 0 {
 		return fmt.Errorf("releases.artifactRetention must be zero or greater")
 	}
+	for _, list := range []struct {
+		name string
+		ids  []string
+	}{
+		{"modules.enabled", c.Modules.Enabled},
+		{"modules.disabled", c.Modules.Disabled},
+	} {
+		for _, id := range list.ids {
+			if strings.TrimSpace(id) == "" {
+				return fmt.Errorf("%s must not contain an empty module ID", list.name)
+			}
+		}
+	}
+	for _, item := range []struct {
+		name  string
+		value string
+	}{
+		{"sync.pollInterval", c.Sync.PollInterval},
+		{"sync.retryBase", c.Sync.RetryBase},
+		{"sync.retryCap", c.Sync.RetryCap},
+	} {
+		duration, err := time.ParseDuration(strings.TrimSpace(item.value))
+		if err != nil {
+			return fmt.Errorf("%s must be a Go duration such as 30s", item.name)
+		}
+		if duration <= 0 {
+			return fmt.Errorf("%s must be greater than zero", item.name)
+		}
+	}
+	if c.Sync.MaxAttempts < 1 {
+		return fmt.Errorf("sync.maxAttempts must be at least 1")
+	}
+	if c.Sync.MaxAssetBytes < 0 {
+		return fmt.Errorf("sync.maxAssetBytes must be zero or greater")
+	}
+	if c.Sync.BatchSize < 1 {
+		return fmt.Errorf("sync.batchSize must be at least 1")
+	}
 	return nil
 }
 
@@ -128,6 +194,12 @@ func Default() *Config {
 	cfg.Discovery.LeaseSeconds = 30
 	cfg.Discovery.Weight = 1
 	cfg.Analytics.Enabled = true
+	cfg.Sync.PollInterval = "5s"
+	cfg.Sync.RetryBase = "30s"
+	cfg.Sync.RetryCap = "1h"
+	cfg.Sync.MaxAttempts = 8
+	cfg.Sync.MaxAssetBytes = 2147483648
+	cfg.Sync.BatchSize = 16
 	return cfg
 }
 
@@ -192,6 +264,39 @@ func applyEnvOverrides(cfg *Config) {
 	setStr("DISTRIBUTION_EVENTBUS_URL", &cfg.Eventbus.URL)
 	setBool("DISTRIBUTION_ANALYTICS_ENABLED", &cfg.Analytics.Enabled)
 	setStr("DISTRIBUTION_ANALYTICS_SALT", &cfg.Analytics.Salt)
+	setList("DISTRIBUTION_MODULES_ENABLED", &cfg.Modules.Enabled)
+	setList("DISTRIBUTION_MODULES_DISABLED", &cfg.Modules.Disabled)
+	setStr("DISTRIBUTION_SYNC_ENCRYPTION_KEY", &cfg.Sync.EncryptionKey)
+	setStr("DISTRIBUTION_SYNC_POLL_INTERVAL", &cfg.Sync.PollInterval)
+	setStr("DISTRIBUTION_SYNC_RETRY_BASE", &cfg.Sync.RetryBase)
+	setStr("DISTRIBUTION_SYNC_RETRY_CAP", &cfg.Sync.RetryCap)
+	setInt("DISTRIBUTION_SYNC_MAX_ATTEMPTS", &cfg.Sync.MaxAttempts)
+	setInt64("DISTRIBUTION_SYNC_MAX_ASSET_BYTES", &cfg.Sync.MaxAssetBytes)
+	setInt("DISTRIBUTION_SYNC_BATCH_SIZE", &cfg.Sync.BatchSize)
+}
+
+// setList reads a comma-separated environment list. An empty value leaves the
+// configured list untouched.
+func setList(key string, dst *[]string) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return
+	}
+	items := make([]string, 0, 4)
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	*dst = items
+}
+
+func setInt64(key string, dst *int64) {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := strconv.ParseInt(value, 10, 64); err == nil {
+			*dst = parsed
+		}
+	}
 }
 
 func setStr(key string, dst *string) {

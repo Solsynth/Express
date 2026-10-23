@@ -268,6 +268,63 @@ func (c *Client) PrepareUpload(ctx context.Context, product string, request any)
 	return preparation, nil
 }
 
+// Modules lists the compiled-in modules and their capabilities.
+func (c *Client) Modules(ctx context.Context) (json.RawMessage, error) {
+	return c.get(ctx, "/modules", nil)
+}
+
+// ListSyncConnections lists a publisher's destination credentials.
+func (c *Client) ListSyncConnections(ctx context.Context, publisher string) (json.RawMessage, error) {
+	return c.get(ctx, "/publishers/"+segment(publisher)+"/sync/connections", nil)
+}
+
+// CreateSyncConnection stores a destination credential.
+func (c *Client) CreateSyncConnection(ctx context.Context, publisher string, body []byte) (json.RawMessage, error) {
+	return c.post(ctx, "/publishers/"+segment(publisher)+"/sync/connections", body)
+}
+
+// UpdateSyncConnection replaces a destination credential.
+func (c *Client) UpdateSyncConnection(ctx context.Context, publisher, id string, body []byte) (json.RawMessage, error) {
+	return c.put(ctx, "/publishers/"+segment(publisher)+"/sync/connections/"+segment(id), body)
+}
+
+// DeleteSyncConnection removes an unused destination credential.
+func (c *Client) DeleteSyncConnection(ctx context.Context, publisher, id string) error {
+	_, err := c.delete(ctx, "/publishers/"+segment(publisher)+"/sync/connections/"+segment(id))
+	return err
+}
+
+// ListSyncLinks lists where a product is mirrored.
+func (c *Client) ListSyncLinks(ctx context.Context, product string) (json.RawMessage, error) {
+	return c.get(ctx, "/products/"+segment(product)+"/sync/links", nil)
+}
+
+// CreateSyncLink links a product to a destination repository.
+func (c *Client) CreateSyncLink(ctx context.Context, product string, body []byte) (json.RawMessage, error) {
+	return c.post(ctx, "/products/"+segment(product)+"/sync/links", body)
+}
+
+// UpdateSyncLink changes an existing link.
+func (c *Client) UpdateSyncLink(ctx context.Context, product, id string, body []byte) (json.RawMessage, error) {
+	return c.put(ctx, "/products/"+segment(product)+"/sync/links/"+segment(id), body)
+}
+
+// DeleteSyncLink removes a link.
+func (c *Client) DeleteSyncLink(ctx context.Context, product, id string) error {
+	_, err := c.delete(ctx, "/products/"+segment(product)+"/sync/links/"+segment(id))
+	return err
+}
+
+// ListSyncJobs lists a product's deliveries.
+func (c *Client) ListSyncJobs(ctx context.Context, product string, query url.Values) (json.RawMessage, error) {
+	return c.get(ctx, "/products/"+segment(product)+"/sync/jobs", query)
+}
+
+// RetrySyncJob re-arms a failed delivery.
+func (c *Client) RetrySyncJob(ctx context.Context, product, id string) (json.RawMessage, error) {
+	return c.post(ctx, "/products/"+segment(product)+"/sync/jobs/"+segment(id)+"/retry", nil)
+}
+
 // PutArtifact uploads file bytes to the presigned URL returned by PrepareUpload.
 func (c *Client) PutArtifact(ctx context.Context, uploadURL, fileName, mimeType, sha256Digest string, file io.Reader, size int64) error {
 	_ = fileName // The filename is part of upload preparation, not a signed PUT header.

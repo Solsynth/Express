@@ -73,3 +73,39 @@ url = ""
 # breakdowns. Keep the salt stable across deployments.
 enabled = true
 salt = ""
+
+[modules]
+# Modules are compiled in; this block only decides which of them run.
+# Leaving enabled empty uses every module's default (all are enabled).
+# enabled = ["app.solian.distribution.sync", "app.solian.sync.github"]
+enabled = []
+# disabled removes a module and everything that requires it.
+# disabled = ["app.solian.sync.gitea"]
+disabled = []
+
+# [modules.settings."app.solian.distribution.sync"]
+# pollInterval = "10s"
+
+[ports]
+# Only needed when several modules provide the same port; the feature module
+# wins by default. The sync engine reaches every enabled adapter by module ID,
+# so this is not required for release mirroring.
+# syncTargets = "app.solian.sync.github"
+
+[sync]
+# Seals destination credentials at rest: base64 of a 32-byte key, or 64 hex
+# characters. Required while app.solian.distribution.sync is enabled; a key
+# change makes existing secrets unreadable, so publishers must re-enter them.
+# Generate with: openssl rand -base64 32
+encryptionKey = ""
+# How often the outbox dispatcher claims due deliveries.
+pollInterval = "5s"
+# Retry backoff: retryBase * 2^(attempts-1), capped at retryCap.
+retryBase = "30s"
+retryCap = "1h"
+# Attempts before a delivery is marked failed. The retry route re-arms it.
+maxAttempts = 8
+# Largest artifact uploaded to a destination; zero publishes metadata only.
+maxAssetBytes = 2147483648
+# Deliveries claimed per dispatcher tick.
+batchSize = 16

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"path/filepath"
@@ -81,6 +82,18 @@ type ArtifactDownloadStore interface {
 // objects after they fall outside the configured release retention window.
 type ArtifactRetentionStore interface {
 	Delete(context.Context, string) error
+}
+
+// ArtifactReader streams a stored artifact so outbound integrations can upload
+// it to a destination. Object stores that can read objects implement it.
+type ArtifactReader interface {
+	Open(ctx context.Context, objectKey string) (io.ReadCloser, int64, error)
+}
+
+// ReleaseSyncEnqueuer records outbound deliveries for a release status change.
+// The release service calls it inside the status-change transaction.
+type ReleaseSyncEnqueuer interface {
+	EnqueueForRelease(tx *gorm.DB, productID, releaseID, action string, channelNames []string) error
 }
 
 type ReleaseEvent struct {
@@ -232,6 +245,16 @@ type ReleaseService struct {
 	analyticsSalt     string
 	artifactRetention int
 	downloadBaseURL   string
+	syncEnqueuer      ReleaseSyncEnqueuer
+}
+
+// SetSyncEnqueuer installs the outbound delivery hook. Without it release
+// status changes simply do not enqueue deliveries.
+func (s *ReleaseService) SetSyncEnqueuer(enqueuer ReleaseSyncEnqueuer) {
+	if s == nil {
+		return
+	}
+	s.syncEnqueuer = enqueuer
 }
 
 func NewPublisherReleaseService(db *gorm.DB, publishers PublisherDirectory, artifacts ArtifactStore, events ReleaseEventPublisher) *ReleaseService {
@@ -714,12 +737,17 @@ func (s *ReleaseService) Publish(ctx context.Context, appID, releaseID string) (
 		}
 	}
 	now := time.Now().UTC()
-	result := s.db.Model(&database.Release{}).Where("id = ? AND app_id = ? AND status = ?", releaseID, appID, database.ReleaseStatusDraft).Updates(map[string]any{"status": database.ReleaseStatusPublished, "published_at": now, "updated_at": now})
-	if result.Error != nil {
-		return nil, fmt.Errorf("publish release: %w", result.Error)
-	}
-	if result.RowsAffected != 1 {
-		return nil, fmt.Errorf("%w: release changed concurrently", ErrConflict)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&database.Release{}).Where("id = ? AND app_id = ? AND status = ?", releaseID, appID, database.ReleaseStatusDraft).Updates(map[string]any{"status": database.ReleaseStatusPublished, "published_at": now, "updated_at": now})
+		if result.Error != nil {
+			return fmt.Errorf("publish release: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: release changed concurrently", ErrConflict)
+		}
+		return s.enqueueSync(tx, appID, releaseID, "publish", channelNames(release))
+	}); err != nil {
+		return nil, err
 	}
 	published, err := s.loadRelease(releaseID)
 	if err != nil {
@@ -908,8 +936,17 @@ func (s *ReleaseService) Yank(ctx context.Context, appID, releaseID string) (*da
 		return nil, err
 	}
 	now := time.Now().UTC()
-	if err := s.db.Model(&database.Release{}).Where("id = ? AND app_id = ? AND status = ?", releaseID, appID, database.ReleaseStatusPublished).Updates(map[string]any{"status": database.ReleaseStatusYanked, "updated_at": now}).Error; err != nil {
-		return nil, fmt.Errorf("yank release: %w", err)
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&database.Release{}).Where("id = ? AND app_id = ? AND status = ?", releaseID, appID, database.ReleaseStatusPublished).Updates(map[string]any{"status": database.ReleaseStatusYanked, "updated_at": now})
+		if result.Error != nil {
+			return fmt.Errorf("yank release: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return fmt.Errorf("%w: release changed concurrently", ErrConflict)
+		}
+		return s.enqueueSync(tx, appID, releaseID, "yank", channelNames(release))
+	}); err != nil {
+		return nil, err
 	}
 	yanked, err := s.loadRelease(releaseID)
 	if err != nil {
@@ -1113,6 +1150,35 @@ func (s *ReleaseService) UsageMetrics(ctx context.Context, appID string, from, t
 
 func (s *ReleaseService) GetRelease(appID, releaseID string) (*database.Release, error) {
 	return s.findRelease(appID, releaseID)
+}
+
+// GetProductForSync returns a product with its localizations hydrated for
+// outbound integrations that describe the product to a destination.
+func (s *ReleaseService) GetProductForSync(ctx context.Context, productID string) (*database.Product, error) {
+	if s == nil || s.db == nil {
+		return nil, fmt.Errorf("%w: database unavailable", ErrDependency)
+	}
+	product, err := s.loadProduct(productID)
+	if err != nil {
+		return nil, err
+	}
+	products := []database.Product{*product}
+	if err := hydrateProductLocalizations(s.db.WithContext(ctx), products); err != nil {
+		return nil, err
+	}
+	return &products[0], nil
+}
+
+// enqueueSync records outbound deliveries inside the caller's transaction, so
+// a release is never published or yanked without its outbox rows.
+func (s *ReleaseService) enqueueSync(tx *gorm.DB, productID, releaseID, action string, channels []string) error {
+	if s.syncEnqueuer == nil {
+		return nil
+	}
+	if err := s.syncEnqueuer.EnqueueForRelease(tx, productID, releaseID, action, channels); err != nil {
+		return fmt.Errorf("%w: enqueue release sync: %v", ErrDependency, err)
+	}
+	return nil
 }
 
 func (s *ReleaseService) requireApp(ctx context.Context, appID string, production bool) (*gen.DyCustomApp, error) {
