@@ -116,6 +116,7 @@ onMounted(load)
                which cannot share a 300 px line without clipping the middle. -->
           <RouterLink
             :to="`/marketplace/${app.product.id}`"
+            view-transition
             class="flex items-start gap-3 py-3 transition-colors hover:bg-base-200/50"
           >
             <AppMark :picture="app.product.icon" :name="productName(app)" flat />

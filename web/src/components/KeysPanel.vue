@@ -111,7 +111,7 @@ onMounted(load)
 
     <ConsolePanel :title="t('keys.title')" :note="loading ? undefined : String(keys.length)">
       <template #header>
-        <div class="ml-auto flex flex-wrap items-center gap-1 sm:gap-2">
+        <div class="flex flex-wrap items-center gap-1 sm:gap-2">
           <IconButton :label="t('common.refresh')" :disabled="loading" @click="load">
             <Renew16 aria-hidden="true" />
           </IconButton>

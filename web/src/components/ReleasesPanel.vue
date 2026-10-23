@@ -197,7 +197,7 @@ onMounted(load)
     :note="loading ? undefined : t('releases.total', { n: total })"
   >
     <template #header>
-      <div class="ml-auto flex flex-wrap items-center gap-1 sm:gap-2">
+      <div class="flex flex-wrap items-center gap-1 sm:gap-2">
         <select
           v-model="channelFilter"
           class="select select-xs control-select"
@@ -242,6 +242,7 @@ onMounted(load)
             <td class="whitespace-nowrap" :data-label="t('releases.columns.version')">
               <RouterLink
                 :to="`/workspace/${productId}/releases/${release.id}`"
+                view-transition
                 class="font-mono text-xs text-base-content hover:underline"
               >
                 {{ release.version }}

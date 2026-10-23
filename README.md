@@ -413,8 +413,9 @@ The marketplace API contract is documented in [`docs/MARKETPLACE_API.md`](docs/M
 
 `web/` is the publisher console: the marketplace, a publisher's products, and
 the release console that uploads artifacts and publishes versions. It is a Vue
-3 + Vite single-page app served by DistributionCenter itself, laid out as a top
-bar plus a publisher/product sidebar with one wide work column.
+3 + Vite single-page app served by DistributionCenter itself: a persistent top
+bar, and a publisher/product sidebar on the console routes where the
+navigation tree exists.
 
 Build it into `web/dist` and point the service at it:
 

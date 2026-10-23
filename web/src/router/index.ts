@@ -8,10 +8,10 @@ declare module 'vue-router' {
   interface RouteMeta {
     /** Translation key of the document title. */
     titleKey?: string
-    /** Card width tier. */
+    /** Constrain the work column to a form width. */
     narrow?: boolean
-    wide?: boolean
-    full?: boolean
+    /** Mount the publisher/product rail beside the page. */
+    sidebar?: boolean
   }
 }
 
@@ -23,19 +23,19 @@ const router = createRouter({
       path: '/marketplace',
       name: 'catalog',
       component: () => import('@/views/CatalogView.vue'),
-      meta: { titleKey: 'app.titles.catalog', wide: true },
+      meta: { titleKey: 'app.titles.catalog' },
     },
     {
       path: '/marketplace/:productId',
       name: 'product',
       component: () => import('@/views/ProductView.vue'),
-      meta: { titleKey: 'app.titles.product', wide: true },
+      meta: { titleKey: 'app.titles.product' },
     },
     {
       path: '/workspace',
       name: 'workspace',
       component: () => import('@/views/WorkspaceView.vue'),
-      meta: { titleKey: 'app.titles.workspace', wide: true },
+      meta: { titleKey: 'app.titles.workspace' },
     },
     {
       // The console is one route tree per product: the tabs switch state, not
@@ -43,13 +43,13 @@ const router = createRouter({
       path: '/workspace/:productId',
       name: 'console',
       component: () => import('@/views/ConsoleView.vue'),
-      meta: { titleKey: 'app.titles.console', wide: true },
+      meta: { titleKey: 'app.titles.console', sidebar: true },
     },
     {
       path: '/workspace/:productId/releases/:releaseId',
       name: 'release',
       component: () => import('@/views/ReleaseView.vue'),
-      meta: { titleKey: 'app.titles.release', wide: true },
+      meta: { titleKey: 'app.titles.release', sidebar: true },
     },
     {
       path: '/:pathMatch(.*)*',

@@ -12,6 +12,7 @@ import { localized, relative } from '@/lib/format'
 import { useNoticeStore } from '@/stores/notice'
 import { useSessionStore } from '@/stores/session'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { navigate } from '@/lib/viewTransition'
 import PageHeader from '@/components/PageHeader.vue'
 import ConsolePanel from '@/components/ConsolePanel.vue'
 import LoadingSkeleton from '@/components/LoadingSkeleton.vue'
@@ -66,7 +67,7 @@ async function create() {
     notice.ok(t('workspace.created', { name: created.name }))
     closeCreate()
     await workspace.load(true)
-    await router.push(`/workspace/${created.id}`)
+    await navigate(router, `/workspace/${created.id}`)
   } catch (caught) {
     error.value = caught instanceof Error ? caught.message : t('workspace.error')
   } finally {
@@ -121,7 +122,7 @@ onMounted(() => void workspace.load())
               class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-soft py-3 last:border-0"
             >
               <AppMark :picture="product.icon" :name="productName(product)" flat />
-              <RouterLink :to="`/workspace/${product.id}`" class="min-w-0 flex-1">
+              <RouterLink :to="`/workspace/${product.id}`" view-transition class="min-w-0 flex-1">
                 <p class="truncate text-[13px] text-base-content">{{ productName(product) }}</p>
                 <p class="truncate text-2xs text-faint">
                   <span class="font-mono">{{ product.slug }}</span>
@@ -135,6 +136,7 @@ onMounted(() => void workspace.load())
               </RouterLink>
               <RouterLink
                 :to="`/workspace/${product.id}`"
+                view-transition
                 class="btn btn-ghost btn-xs"
                 :aria-label="t('workspace.openConsole')"
               >

@@ -36,8 +36,18 @@ const primaryNav = [
 
 /** The product whose console is open, so the sidebar can mark it. */
 const activeProductId = computed(() =>
-  route.path.startsWith('/workspace/') ? String(route.params.productId ?? '') : '',
+  route.path.startsWith('/workspace/') && route.params.productId
+    ? String(route.params.productId)
+    : '',
 )
+
+/**
+ * The sidebar belongs to the console, not the shell. The marketplace is a
+ * public catalogue that reads as one wide page, and only a publisher
+ * workspace has a tree worth putting beside it — so the rail appears when a
+ * product console is open and the page otherwise uses the full width.
+ */
+const showSidebar = computed(() => session.signedIn && route.meta.sidebar === true)
 
 const drawerOpen = ref(false)
 const accountOpen = ref(false)
@@ -78,7 +88,6 @@ watch(
   () => {
     drawerOpen.value = false
     accountOpen.value = false
-    // A new product may have been created since the last listing.
     void workspace.load(true)
   },
 )
@@ -106,11 +115,12 @@ function changeLocale(event: Event) {
     </a>
 
     <!-- Top bar: identity and the two workspace-level destinations. The
-         per-product tree lives in the sidebar, so this row stays short even
-         with several publishers. -->
+         per-product tree lives in the console's sidebar, so this row stays
+         short even with several publishers. -->
     <header class="sticky top-0 z-30 border-b border-line bg-base-100/95 backdrop-blur">
       <div class="flex h-12 items-center gap-3 px-3 sm:px-5">
         <button
+          v-if="showSidebar"
           type="button"
           class="btn btn-ghost btn-xs px-1.5 lg:hidden"
           :aria-label="t('app.openNavigation')"
@@ -135,6 +145,7 @@ function changeLocale(event: Event) {
             v-for="item in primaryNav"
             :key="item.to"
             :to="item.to"
+            view-transition
             class="flex items-center gap-1.5 rounded-[2px] px-2 py-1 text-2xs tracking-[0.04em] transition-colors"
             :class="
               route.path.startsWith(item.to)
@@ -205,10 +216,8 @@ function changeLocale(event: Event) {
                   {{ session.publishers.map((publisher) => publisher.name).join(', ') || '—' }}
                 </span>
               </li>
-              <li class="md:hidden">
-                <RouterLink v-for="item in primaryNav" :key="item.to" :to="item.to">
-                  {{ t(item.labelKey) }}
-                </RouterLink>
+              <li v-for="item in primaryNav" :key="item.to" class="md:hidden">
+                <RouterLink :to="item.to">{{ t(item.labelKey) }}</RouterLink>
               </li>
             </ul>
           </div>
@@ -217,11 +226,11 @@ function changeLocale(event: Event) {
     </header>
 
     <div class="flex flex-1">
-      <!-- Sidebar: the account's publishers and their products. This is the
-           navigation a release console needs, and it is the reason the page
-           itself can be one wide column of tables instead of a stacked card. -->
+      <!-- Console sidebar: the account's publishers and their products. Only a
+           product console has a tree worth putting beside the page, so the
+           marketplace and the workspace itself use the full width. -->
       <aside
-        v-if="session.signedIn"
+        v-if="showSidebar"
         class="fixed inset-y-0 left-0 z-40 w-64 shrink-0 overflow-y-auto border-r border-line bg-base-100 transition-transform lg:sticky lg:top-12 lg:z-0 lg:h-[calc(100dvh-3rem)] lg:translate-x-0 lg:bg-base-100/40"
         :class="drawerOpen ? 'translate-x-0' : '-translate-x-full'"
         :aria-label="t('app.publishers')"
@@ -258,6 +267,7 @@ function changeLocale(event: Event) {
               <li v-for="product in group.products" :key="product.id">
                 <RouterLink
                   :to="`/workspace/${product.id}`"
+                  view-transition
                   class="flex items-center gap-2 rounded-[2px] px-2 py-1.5 transition-colors"
                   :class="
                     activeProductId === product.id
@@ -272,14 +282,17 @@ function changeLocale(event: Event) {
             </ul>
           </div>
 
-          <p v-if="session.publishers.length && !workspace.products.length && !workspace.loading" class="voice px-2 text-[12px]">
+          <p
+            v-if="session.publishers.length && !workspace.products.length && !workspace.loading"
+            class="voice px-2 text-[12px]"
+          >
             {{ t('workspace.empty') }}
           </p>
         </nav>
       </aside>
 
       <button
-        v-if="drawerOpen && session.signedIn"
+        v-if="drawerOpen && showSidebar"
         type="button"
         class="fixed inset-0 z-30 bg-black/60 lg:hidden"
         :aria-label="t('common.close')"

@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import './transitions.css';
 
 @plugin 'daisyui' {
   themes: false;
@@ -409,6 +410,12 @@
   .cell-stack {
     @apply flex flex-col;
     min-width: 0;
+  }
+
+  /* The region a console tab swaps. It is named only while a transition runs,
+     so the browser can animate this box without the rest of the page. */
+  .console-panel {
+    view-transition-name: console-panel;
   }
 
   .dot {

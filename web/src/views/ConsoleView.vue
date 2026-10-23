@@ -9,8 +9,10 @@ import type { ProductWrite } from '@/lib/api'
 import { ExpressError } from '@/lib/api/client'
 import type { ProductDetail } from '@/lib/api/types'
 import { count, localized, relative, target } from '@/lib/format'
+import { withViewTransition } from '@/lib/viewTransition'
 import { useModulesStore, MODULES } from '@/stores/modules'
 import { useNoticeStore } from '@/stores/notice'
+import { navigate } from '@/lib/viewTransition'
 import { useSessionStore } from '@/stores/session'
 import PageHeader from '@/components/PageHeader.vue'
 import ConsolePanel from '@/components/ConsolePanel.vue'
@@ -40,6 +42,8 @@ const error = ref('')
 const forbidden = ref(false)
 const missing = ref(false)
 const tab = ref('overview')
+/** True only while a tab switch is animating; names the panel region. */
+const panelTransition = ref(false)
 
 const editing = ref(false)
 const saving = ref(false)
@@ -96,6 +100,22 @@ async function load() {
   }
 }
 
+/**
+ * A tab switch swaps one panel for another inside the same page. The panel is
+ * named for the duration of the switch only, so the browser cross-fades that
+ * region instead of the whole route — and an ordinary navigation never has to
+ * share a unique name with it.
+ */
+function selectTab(next: string) {
+  if (next === tab.value) return
+  panelTransition.value = true
+  void withViewTransition(() => {
+    tab.value = next
+  }).finally(() => {
+    panelTransition.value = false
+  })
+}
+
 function openEdit() {
   const product = detail.value?.product
   if (!product) return
@@ -144,7 +164,7 @@ async function remove() {
     await productApi.remove(product.id)
     notice.ok(t('console.deleted'))
     removing.value = false
-    await router.push('/workspace')
+    await navigate(router, '/workspace')
   } catch (caught) {
     notice.fail(caught instanceof ExpressError ? caught.message : t('console.error'))
   } finally {
@@ -235,9 +255,18 @@ onMounted(() => {
           </button>
         </div>
 
-        <TabBox :tabs="tabs" :active="tab" :label="t('app.console')" @select="tab = $event" />
+        <TabBox
+          :tabs="tabs"
+          :active="tab"
+          :label="t('app.console')"
+          @select="selectTab"
+        />
 
-        <div v-if="tab === 'overview'" class="space-y-6">
+        <div
+          v-if="tab === 'overview'"
+          class="space-y-6"
+          :class="panelTransition ? 'console-panel' : ''"
+        >
           <div class="grid grid-cols-3 gap-2 sm:gap-4">
             <ConsolePanel :title="t('console.latestStable')">
               <p class="font-mono text-lg text-base-content">
@@ -310,30 +339,35 @@ onMounted(() => {
 
         <ReleasesPanel
           v-else-if="tab === 'releases'"
+          :class="panelTransition ? 'console-panel' : ''"
           :product-id="detail.product.id"
           :can-manage="session.can('distribution.releases.manage')"
           :can-publish="session.can('distribution.releases.publish')"
         />
 
         <ChannelsPanel
+          :class="panelTransition ? 'console-panel' : ''"
           v-else-if="tab === 'channels'"
           :product-id="detail.product.id"
           :can-manage="session.can('distribution.channels.manage')"
         />
 
         <KeysPanel
+          :class="panelTransition ? 'console-panel' : ''"
           v-else-if="tab === 'keys'"
           :product-id="detail.product.id"
           :can-manage="session.can('distribution.upload_keys.manage')"
         />
 
         <MetricsPanel
+          :class="panelTransition ? 'console-panel' : ''"
           v-else-if="tab === 'metrics'"
           :product-id="detail.product.id"
           :can-read="session.can('distribution.metrics.read')"
         />
 
         <SyncPanel
+          :class="panelTransition ? 'console-panel' : ''"
           v-else-if="tab === 'sync'"
           :product-id="detail.product.id"
           :publisher="publisher"

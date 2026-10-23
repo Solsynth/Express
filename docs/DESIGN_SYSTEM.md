@@ -22,11 +22,11 @@ palette and the typography; this one records what Express adds to it.
   `.voice` (sans).
 - **Blocks, not rules.** Panels are `bg-base-200/30` with a hairline border.
   Hairlines survive inside a ledger and inside a panel header.
-- **The shell is a top bar plus a sidebar.** A release console is a dense
-  ledger surface, so the page is one wide column rather than a centered card.
-  The sidebar carries the account's publishers and products; the top bar
-  carries identity, the theme and language controls, and the two
-  workspace-level destinations.
+- **The shell is a top bar everywhere, with a sidebar where a tree exists.**
+  A release console is a dense ledger surface, so the page is one wide column
+  rather than a centered card. The marketplace, a public product page, and the
+  workspace read as a single wide page; the sidebar belongs to the console,
+  where the account's publishers and products are navigation worth showing.
 
 Tokens, themes, and base chrome live in `web/src/assets/main.css`. The theme
 names are `express` (dark, default) and `express-light`; the palette values are
@@ -79,11 +79,17 @@ is the page people link to when asking about a version.
 └────────────────────┴─────────────────────────────────────┘
 ```
 
-The sidebar is sticky from `lg` up and a drawer below it, opened by the
-hamburger in the top bar. It lists one group per publisher the account belongs
-to, with each group's products beneath it; the open product is filled with
-`base-300`. A deployment's account with no publisher sees the group list empty
-and the workspace page explains why.
+The sidebar is mounted by route metadata (`meta.sidebar`), which the console
+and the release detail set. It is sticky from `lg` up and a drawer below it,
+opened by the hamburger in the top bar. It lists one group per publisher the
+account belongs to, with each group's products beneath it; the open product is
+filled with `base-300`. A deployment's account with no publisher sees the
+group list empty and the workspace page explains why.
+
+Scoping it to the console is deliberate: the marketplace is a public catalogue
+and the workspace is a list of publishers, and neither has a tree to put beside
+it. A rail that is always present would also cost 256 px of the width the
+tables need.
 
 The main column is capped at 1440 px so a 4K display does not stretch a
 six-column ledger past readability. `meta.narrow` narrows a page to 560 px for
@@ -92,6 +98,26 @@ the rare form-shaped route.
 The status rail is sticky to the bottom of the main column: a result stays
 visible where the work happened, the way a terminal prints it, without
 floating over the content.
+
+### View transitions
+
+Route changes cross-fade instead of swapping. Two entry points opt in:
+
+- A `RouterLink` carries `view-transition`; vue-router then wraps the
+  navigation in `document.startViewTransition`.
+- `navigate()` (in `lib/viewTransition.ts`) does the same for a programmatic
+  `push`, and `withViewTransition()` wraps a local state change — the console
+  tab strip uses it so the panel cross-fades while the page frame stays put.
+
+The effect is a progressive enhancement. `withViewTransition` runs the update
+directly when the browser has no `startViewTransition`, and when the reader
+set `prefers-reduced-motion`. A transition superseded by a newer navigation
+still applied its update, so `finished` rejecting is not an error; the promise
+the caller awaits is the update itself.
+
+Only the work column animates: the sizing and chrome live in
+`assets/transitions.css`, and the console panel is named only for the duration
+of a tab switch, so a normal navigation never has to share that name.
 
 ## 5. Components
 

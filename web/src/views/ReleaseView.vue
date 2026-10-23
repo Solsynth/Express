@@ -10,6 +10,7 @@ import type { ManagedRelease } from '@/lib/api/types'
 import { bytes, count, localized, relative, target, utcStamp } from '@/lib/format'
 import { useNoticeStore } from '@/stores/notice'
 import { useSessionStore } from '@/stores/session'
+import { navigate } from '@/lib/viewTransition'
 import PageHeader from '@/components/PageHeader.vue'
 import ConsolePanel from '@/components/ConsolePanel.vue'
 import LoadingSkeleton from '@/components/LoadingSkeleton.vue'
@@ -177,7 +178,7 @@ async function remove() {
     await releaseApi.remove(productId.value, current.id)
     notice.ok(t('releases.deleted', { version: current.version }))
     pendingDelete.value = null
-    await router.push(`/workspace/${productId.value}`)
+    await navigate(router, `/workspace/${productId.value}`)
   } catch (caught) {
     notice.fail(caught instanceof ExpressError ? caught.message : t('console.error'))
   } finally {

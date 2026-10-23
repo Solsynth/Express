@@ -225,7 +225,7 @@ onMounted(load)
     <template v-if="tab === 'links'">
       <ConsolePanel :title="t('sync.links')" :note="loading ? undefined : String(links.length)">
         <template #header>
-          <div class="ml-auto flex flex-wrap items-center gap-1 sm:gap-2">
+          <div class="flex flex-wrap items-center gap-1 sm:gap-2">
             <IconButton :label="t('common.refresh')" :disabled="loading" @click="load">
               <Renew16 aria-hidden="true" />
             </IconButton>
@@ -309,7 +309,7 @@ onMounted(load)
         :note="loading ? undefined : String(connections.length)"
       >
         <template #header>
-          <div class="ml-auto">
+          <div class="flex flex-wrap items-center gap-1 sm:gap-2">
             <button v-if="canManage" type="button" class="btn btn-ghost btn-xs" @click="openConnection">
               <Add16 class="mr-1" aria-hidden="true" />
               {{ t('sync.createConnection') }}

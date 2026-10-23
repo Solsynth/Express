@@ -1,0 +1,53 @@
+/* View transitions: a route change cross-fades the page instead of swapping
+   it. The animation is the browser's own snapshot pair, so it costs no
+   markup and no JavaScript layout work; `withViewTransition` and the
+   `view-transition` link option opt in, which keeps the effect off browsers
+   and readers who did not ask for it. */
+
+@view-transition {
+  navigation: same-document;
+}
+
+/* The chrome stays put: only the work column moves, so the sidebar and the top
+   bar keep their identity while the page changes under them. */
+::view-transition-group(root) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+::view-transition-old(root) {
+  animation: page-out 140ms ease both;
+}
+
+::view-transition-new(root) {
+  animation: page-in 180ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* A tab switch is a smaller move than a navigation: the page frame stays, so
+   the fade is shorter and there is no vertical travel. */
+::view-transition-group(console-panel) {
+  animation-duration: 140ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(console-panel) {
+    animation: none !important;
+  }
+}
