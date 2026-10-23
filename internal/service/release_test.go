@@ -262,8 +262,13 @@ func TestManagedReleaseListingAndDraftDeletion(t *testing.T) {
 	if _, err := svc.Publish(ctx, appID, published.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DeleteRelease(ctx, appID, published.ID); !errors.Is(err, ErrConflict) {
-		t.Fatalf("delete published release error = %v, want conflict", err)
+	// A published release is deletable: deleting retires it at its
+	// destinations, so a mirror never keeps a release Express removed.
+	if err := svc.DeleteRelease(ctx, appID, published.ID); err != nil {
+		t.Fatalf("delete published release error = %v", err)
+	}
+	if _, err := svc.GetRelease(appID, published.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("published release still readable after deletion: %v", err)
 	}
 }
 

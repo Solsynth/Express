@@ -215,7 +215,7 @@ func (t *githubTarget) Publish(ctx context.Context, conn syncengine.Connection, 
 	body := map[string]any{
 		"tag_name":   payload.Version,
 		"name":       payload.Title,
-		"body":       payload.Notes,
+		"body":       payload.Description(),
 		"draft":      payload.Draft,
 		"prerelease": payload.Prerelease,
 	}
@@ -258,7 +258,7 @@ func (t *githubTarget) upsert(ctx context.Context, base, releasePath string, hea
 	}
 	body := map[string]any{
 		"name":       payload.Title,
-		"body":       payload.Notes,
+		"body":       payload.Description(),
 		"draft":      payload.Draft,
 		"prerelease": payload.Prerelease,
 	}

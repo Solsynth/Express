@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"src.solsynth.dev/solsynth/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
 
 // decodeSecret decodes the sealed JSON payload into the adapter-facing map.
@@ -74,4 +75,104 @@ func truncate(value string, limit int) string {
 		return value
 	}
 	return value[:limit]
+}
+
+// releaseDescription renders the body a destination stores for a release: the
+// publisher's notes verbatim, then a horizontal rule and a markdown table of
+// downloadable artifacts. The table is omitted when the release has no
+// downloadable artifact, and the rule is omitted when there are no notes, so
+// the publisher's text is never altered or prefixed.
+//
+// URLs are the public download endpoints; presigned URLs are deliberately never
+// used because a destination release outlives any signature.
+func releaseDescription(notes string, artifacts []ArtifactLink) string {
+	notes = strings.TrimRight(notes, "\n")
+	rows := make([]ArtifactLink, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		if strings.TrimSpace(artifact.URL) == "" {
+			continue
+		}
+		rows = append(rows, artifact)
+	}
+	if len(rows) == 0 {
+		return notes
+	}
+	var builder strings.Builder
+	if strings.TrimSpace(notes) != "" {
+		builder.WriteString(notes)
+		builder.WriteString("\n\n---\n\n")
+	}
+	builder.WriteString("| Artifact | Platform | Architecture | Size | Download |\n")
+	builder.WriteString("| --- | --- | --- | --- | --- |\n")
+	for _, artifact := range rows {
+		name := strings.TrimSpace(artifact.Name)
+		if name == "" {
+			name = "download"
+		}
+		builder.WriteString("| ")
+		builder.WriteString(tableCell(name))
+		builder.WriteString(" | ")
+		builder.WriteString(tableCell(artifact.Platform))
+		builder.WriteString(" | ")
+		builder.WriteString(tableCell(artifact.Architecture))
+		builder.WriteString(" | ")
+		builder.WriteString(humanSize(artifact.Size))
+		builder.WriteString(" | [Download](")
+		builder.WriteString(strings.ReplaceAll(artifact.URL, ")", "%29"))
+		builder.WriteString(") |\n")
+	}
+	return strings.TrimRight(builder.String(), "\n")
+}
+
+// tableCell escapes the characters that would break a markdown table row.
+func tableCell(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	value = strings.ReplaceAll(value, "|", `\|`)
+	value = strings.ReplaceAll(value, "\n", " ")
+	return value
+}
+
+// humanSize renders a byte count the way a release reader expects to see it.
+func humanSize(size int64) string {
+	if size <= 0 {
+		return "-"
+	}
+	const unit = 1024
+	if size < unit {
+		return fmt.Sprintf("%d B", size)
+	}
+	value := float64(size)
+	for _, suffix := range []string{"KiB", "MiB", "GiB", "TiB"} {
+		value /= unit
+		if value < unit {
+			return fmt.Sprintf("%.1f %s", value, suffix)
+		}
+	}
+	return fmt.Sprintf("%.1f PiB", value/unit)
+}
+
+// snapshotFromService converts the release service's snapshot into the payload
+// snapshot stored on the job, so the service package stays free of sync types.
+func snapshotFromService(in service.ReleaseSyncSnapshot) PayloadSnapshot {
+	snapshot := PayloadSnapshot{
+		ProductSlug: in.ProductSlug,
+		ProductName: in.ProductName,
+		ProductID:   in.ProductID,
+		Version:     in.Version,
+		Title:       in.Title,
+		Notes:       in.Notes,
+		Channels:    in.Channels,
+		Prerelease:  in.Prerelease,
+		Draft:       in.Draft,
+	}
+	for _, artifact := range in.Artifacts {
+		snapshot.Artifacts = append(snapshot.Artifacts, ArtifactLink{
+			Name: artifact.Name, Platform: artifact.Platform,
+			Architecture: artifact.Architecture, Size: artifact.Size, URL: artifact.URL,
+		})
+	}
+	return snapshot
 }

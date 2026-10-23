@@ -311,7 +311,96 @@ func (s *Service) EnqueueForRelease(tx *gorm.DB, productID, releaseID, action st
 			State:       JobStatePending,
 			NextAttempt: now,
 		}
-		if err := tx.Clauses(clause.OnConflict{DoNothing: true}).Create(&job).Error; err != nil {
+		// The unique index makes enqueueing idempotent. A publish row that
+		// already exists is re-armed rather than ignored, so editing a
+		// published release re-delivers the current payload; adapters upsert by
+		// tag, so re-delivery is safe. A running job keeps its claim.
+		onConflict := clause.OnConflict{
+			Columns:   []clause.Column{{Name: "link_id"}, {Name: "release_id"}, {Name: "action"}},
+			DoUpdates: clause.AssignmentColumns([]string{"state", "next_attempt", "attempts", "last_error", "updated_at"}),
+			Where:     clause.Where{Exprs: []clause.Expression{clause.Neq{Column: "state", Value: JobStateRunning}}},
+		}
+		if err := tx.Clauses(onConflict).Create(&job).Error; err != nil {
+			return fmt.Errorf("enqueue sync job: %w", err)
+		}
+	}
+	return nil
+}
+
+// EnqueueDeleteForRelease records a yank for every matching link together with
+// a snapshot of the release, because the caller deletes the release in the same
+// transaction. The snapshot is what the dispatcher delivers: it cannot re-read
+// a row that no longer exists.
+func (s *Service) EnqueueDeleteForRelease(tx *gorm.DB, productID, releaseID string, in service.ReleaseSyncSnapshot) error {
+	snapshot := snapshotFromService(in)
+	if s == nil {
+		return ErrSyncDisabled
+	}
+	if tx == nil {
+		tx = s.db
+	}
+	productID, releaseID = strings.TrimSpace(productID), strings.TrimSpace(releaseID)
+	if productID == "" || releaseID == "" {
+		return fmt.Errorf("%w: product and release ids are required", service.ErrValidation)
+	}
+	var links []database.SyncLink
+	if err := tx.Where("product_id = ?", productID).Find(&links).Error; err != nil {
+		return fmt.Errorf("load sync links: %w", err)
+	}
+	if len(links) == 0 {
+		return nil
+	}
+	connectionIDs := make([]string, 0, len(links))
+	for _, link := range links {
+		connectionIDs = append(connectionIDs, link.ConnectionID)
+	}
+	var connections []database.SyncConnection
+	if err := tx.Where("id IN ?", connectionIDs).Find(&connections).Error; err != nil {
+		return fmt.Errorf("load sync connections: %w", err)
+	}
+	providers := make(map[string]string, len(connections))
+	for _, connection := range connections {
+		providers[connection.ID] = connection.Provider
+	}
+	now := time.Now().UTC()
+	for _, link := range links {
+		provider, ok := providers[link.ConnectionID]
+		if !ok || !s.providerAvailable(provider) {
+			continue
+		}
+		filter, err := decodeChannelFilter(link.Channels)
+		if err != nil {
+			return err
+		}
+		if !filter.matches(snapshot.Channels) {
+			continue
+		}
+		// Only a release that actually reached this destination needs
+		// retiring; a draft that was never delivered leaves no trace there.
+		var delivered int64
+		if err := tx.Model(&database.SyncJob{}).
+			Where("link_id = ? AND release_id = ? AND action = ? AND state = ?", link.ID, releaseID, JobActionPublish, JobStateDone).
+			Count(&delivered).Error; err != nil {
+			return fmt.Errorf("check delivered sync job: %w", err)
+		}
+		if delivered == 0 {
+			continue
+		}
+		job := database.SyncJob{
+			ID:          uuid.NewString(),
+			LinkID:      link.ID,
+			ReleaseID:   releaseID,
+			Action:      JobActionYank,
+			State:       JobStatePending,
+			NextAttempt: now,
+			Payload:     snapshot.encode(),
+		}
+		onConflict := clause.OnConflict{
+			Columns:   []clause.Column{{Name: "link_id"}, {Name: "release_id"}, {Name: "action"}},
+			DoUpdates: clause.AssignmentColumns([]string{"state", "next_attempt", "attempts", "last_error", "payload", "updated_at"}),
+			Where:     clause.Where{Exprs: []clause.Expression{clause.Neq{Column: "state", Value: JobStateRunning}}},
+		}
+		if err := tx.Clauses(onConflict).Create(&job).Error; err != nil {
 			return fmt.Errorf("enqueue sync job: %w", err)
 		}
 	}

@@ -68,7 +68,7 @@ func (t *giteaTarget) Publish(ctx context.Context, conn syncengine.Connection, p
 	body := map[string]any{
 		"tag_name":   payload.Version,
 		"name":       payload.Title,
-		"body":       payload.Notes,
+		"body":       payload.Description(),
 		"draft":      payload.Draft,
 		"prerelease": payload.Prerelease,
 	}
@@ -110,7 +110,7 @@ func (t *giteaTarget) upsert(ctx context.Context, base, releasePath string, head
 	}
 	body := map[string]any{
 		"name":       payload.Title,
-		"body":       payload.Notes,
+		"body":       payload.Description(),
 		"draft":      payload.Draft,
 		"prerelease": payload.Prerelease,
 	}

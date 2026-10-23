@@ -367,6 +367,11 @@ type SyncJob struct {
 	ExternalURL string     `gorm:"size:512" json:"external_url,omitempty"`
 	ExternalID  string     `gorm:"size:128" json:"external_id,omitempty"`
 	LastError   string     `gorm:"type:text" json:"last_error,omitempty"`
+	// Payload snapshots the release description at enqueue time. A delete
+	// enqueues the yank in the same transaction that removes the release, so
+	// the dispatcher cannot re-read the row; the snapshot is what it delivers.
+	// It is empty for every other action, which reads the live release.
+	Payload JSONMap `gorm:"type:json" json:"payload,omitempty"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 }

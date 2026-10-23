@@ -67,6 +67,17 @@ type webhookDetail struct {
 	Prerelease  bool     `json:"prerelease"`
 	Status      string   `json:"status,omitempty"`
 	DownloadURL string   `json:"download_url"`
+	// Artifacts is structured rather than pre-rendered: a receiver composes
+	// its own message, so it gets the fields, not a markdown table.
+	Artifacts []webhookArtifact `json:"artifacts"`
+}
+
+type webhookArtifact struct {
+	Name         string `json:"name"`
+	Platform     string `json:"platform"`
+	Architecture string `json:"architecture"`
+	Size         int64  `json:"size"`
+	URL          string `json:"url"`
 }
 
 func (t *webhookTarget) Publish(ctx context.Context, conn syncengine.Connection, payload syncengine.ReleasePayload) (syncengine.Result, error) {
@@ -97,6 +108,7 @@ func (t *webhookTarget) send(ctx context.Context, conn syncengine.Connection, pa
 			Prerelease:  payload.Prerelease,
 			Status:      status,
 			DownloadURL: payload.AssetURL,
+			Artifacts:   webhookArtifacts(payload.Artifacts),
 		},
 	})
 	if err != nil {
@@ -134,4 +146,20 @@ func (t *webhookTarget) send(ctx context.Context, conn syncengine.Connection, pa
 		return syncengine.Result{}, syncengine.Permanent(fmt.Errorf("webhook returned %d: %s", resp.StatusCode, errorBody(responsePayload)))
 	}
 	return syncengine.Result{ExternalURL: endpoint}, nil
+}
+
+// webhookArtifacts flattens the payload artifacts for the envelope. The slice
+// is always non-nil so a receiver can range over it without a nil check.
+func webhookArtifacts(artifacts []syncengine.ArtifactLink) []webhookArtifact {
+	out := make([]webhookArtifact, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		out = append(out, webhookArtifact{
+			Name:         artifact.Name,
+			Platform:     artifact.Platform,
+			Architecture: artifact.Architecture,
+			Size:         artifact.Size,
+			URL:          artifact.URL,
+		})
+	}
+	return out
 }

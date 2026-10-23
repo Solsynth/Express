@@ -72,7 +72,7 @@ func (t *gitlabTarget) Publish(ctx context.Context, conn syncengine.Connection, 
 	body := map[string]any{
 		"name":        payload.Title,
 		"tag_name":    payload.Version,
-		"description": appendArtifactURL(payload.Notes, payload.AssetURL),
+		"description": payload.Description(),
 	}
 	base := t.baseURL(conn)
 	var release gitlabRelease

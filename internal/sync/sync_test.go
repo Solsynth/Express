@@ -366,3 +366,140 @@ func TestDispatchHoldsJobsWhenProviderIsDisabled(t *testing.T) {
 		t.Fatalf("job state = %s, want done after re-enabling the adapter", job.State)
 	}
 }
+
+func TestEnqueueReArmsDonePublishJob(t *testing.T) {
+	f := newFixture(t, Options{BatchSize: 8, MaxAttempts: 3, RetryBase: time.Millisecond, RetryCap: time.Second, PollInterval: time.Hour})
+	f.addLink(t, "Solsynth/A", ChannelFilter{})
+	if err := f.service.EnqueueForRelease(f.db, f.product.ID, f.release.ID, JobActionPublish, []string{"stable"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var job database.SyncJob
+	if err := f.db.First(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.State != JobStateDone || job.ExternalID != "42" {
+		t.Fatalf("job = %s/%s, want done/42 after the first delivery", job.State, job.ExternalID)
+	}
+
+	// Editing a published release re-arms the same row instead of adding one.
+	if err := f.service.EnqueueForRelease(f.db, f.product.ID, f.release.ID, JobActionPublish, []string{"stable"}); err != nil {
+		t.Fatal(err)
+	}
+	var jobs []database.SyncJob
+	if err := f.db.Find(&jobs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("jobs = %d, want the existing row re-armed", len(jobs))
+	}
+	if jobs[0].State != JobStatePending || jobs[0].Attempts != 0 {
+		t.Fatalf("job = %s/%d, want pending/0 after re-arm", jobs[0].State, jobs[0].Attempts)
+	}
+	if _, err := f.service.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.target.publishes) != 2 {
+		t.Fatalf("Publish() calls = %d, want the edit re-delivered", len(f.target.publishes))
+	}
+}
+
+func TestEnqueueLeavesRunningJobClaimed(t *testing.T) {
+	f := newFixture(t, Options{BatchSize: 8, MaxAttempts: 3, RetryBase: time.Millisecond, RetryCap: time.Second, PollInterval: time.Hour})
+	f.addLink(t, "Solsynth/A", ChannelFilter{})
+	if err := f.service.EnqueueForRelease(f.db, f.product.ID, f.release.ID, JobActionPublish, []string{"stable"}); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate an in-flight delivery: the row is claimed by a dispatcher.
+	locked := time.Now().UTC().Add(time.Minute)
+	if err := f.db.Model(&database.SyncJob{}).Where("1 = 1").Updates(map[string]any{"state": JobStateRunning, "locked_until": locked}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := f.service.EnqueueForRelease(f.db, f.product.ID, f.release.ID, JobActionPublish, []string{"stable"}); err != nil {
+		t.Fatal(err)
+	}
+	var job database.SyncJob
+	if err := f.db.First(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.State != JobStateRunning {
+		t.Fatalf("job state = %s, want the in-flight claim preserved", job.State)
+	}
+}
+
+func TestDeleteEnqueuesYankWithSnapshot(t *testing.T) {
+	f := newFixture(t, Options{BatchSize: 8, MaxAttempts: 3, RetryBase: time.Millisecond, RetryCap: time.Second, PollInterval: time.Hour})
+	link := f.addLink(t, "Solsynth/A", ChannelFilter{Include: []string{"stable"}})
+	if err := f.service.EnqueueForRelease(f.db, f.product.ID, f.release.ID, JobActionPublish, []string{"stable"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.service.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := service.ReleaseSyncSnapshot{
+		ProductSlug: "desktop", ProductName: "Desktop", ProductID: f.product.ID,
+		Version: "1.4.0", Title: "Desktop 1.4.0", Notes: "snapshot notes",
+		Channels:  []string{"stable"},
+		Artifacts: []service.ReleaseSyncArtifact{{Name: "a.tgz", Platform: "macos", Architecture: "arm64", Size: 12, URL: "https://d.test/a.tgz"}},
+	}
+	// Delete the release before the job is delivered: the snapshot is all the
+	// dispatcher has left.
+	if err := f.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("release_id = ?", f.release.ID).Delete(&database.ReleaseArtifact{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("DELETE FROM release_channels WHERE release_id = ?", f.release.ID).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("id = ?", f.release.ID).Delete(&database.Release{}).Error; err != nil {
+			return err
+		}
+		return f.service.EnqueueDeleteForRelease(tx, f.product.ID, f.release.ID, snapshot)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var job database.SyncJob
+	if err := f.db.Where("action = ?", JobActionYank).First(&job).Error; err != nil {
+		t.Fatal(err)
+	}
+	if job.LinkID != link.ID || len(job.Payload) == 0 {
+		t.Fatalf("yank job = %+v, want the snapshot payload", job)
+	}
+	if _, err := f.service.RunOnce(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.target.yanks) != 1 {
+		t.Fatalf("Yank() calls = %d, want 1", len(f.target.yanks))
+	}
+	yanked := f.target.yanks[0]
+	if yanked.Version != "1.4.0" || yanked.Title != "Desktop 1.4.0" || yanked.Notes != "snapshot notes" {
+		t.Fatalf("yanked payload = %+v, want the snapshot", yanked)
+	}
+	if yanked.Link.Repository != "Solsynth/A" || len(yanked.Artifacts) != 1 {
+		t.Fatalf("yanked payload = %+v, want the link and artifact", yanked)
+	}
+	if f.target.previous[0].ExternalID != "42" {
+		t.Fatalf("previous = %+v, want the publish result", f.target.previous[0])
+	}
+}
+
+func TestDeleteSkipsNeverDeliveredLinks(t *testing.T) {
+	f := newFixture(t, Options{BatchSize: 8, MaxAttempts: 3, RetryBase: time.Millisecond, RetryCap: time.Second, PollInterval: time.Hour})
+	f.addLink(t, "Solsynth/A", ChannelFilter{})
+	snapshot := service.ReleaseSyncSnapshot{ProductID: f.product.ID, Version: "1.4.0", Channels: []string{"stable"}}
+	// No publish ever completed, so the destination has nothing to retire.
+	if err := f.service.EnqueueDeleteForRelease(f.db, f.product.ID, f.release.ID, snapshot); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := f.db.Model(&database.SyncJob{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("jobs = %d, want none for a never-delivered release", count)
+	}
+}

@@ -113,6 +113,33 @@ type ArtifactReader interface {
 // The release service calls it inside the status-change transaction.
 type ReleaseSyncEnqueuer interface {
 	EnqueueForRelease(tx *gorm.DB, productID, releaseID, action string, channelNames []string) error
+	// EnqueueDeleteForRelease records the retirement of a release that the
+	// caller deletes in the same transaction, so the delivery carries a
+	// snapshot instead of re-reading a row that no longer exists.
+	EnqueueDeleteForRelease(tx *gorm.DB, productID, releaseID string, snapshot ReleaseSyncSnapshot) error
+}
+
+// ReleaseSyncSnapshot is the release description captured at delete time.
+type ReleaseSyncSnapshot struct {
+	ProductSlug string
+	ProductName string
+	ProductID   string
+	Version     string
+	Title       string
+	Notes       string
+	Channels    []string
+	Prerelease  bool
+	Draft       bool
+	Artifacts   []ReleaseSyncArtifact
+}
+
+// ReleaseSyncArtifact is one downloadable artifact in a delete snapshot.
+type ReleaseSyncArtifact struct {
+	Name         string
+	Platform     string
+	Architecture string
+	Size         int64
+	URL          string
 }
 
 type ReleaseEvent struct {
@@ -552,7 +579,7 @@ func (s *ReleaseService) AddArtifact(ctx context.Context, appID, releaseID strin
 	if err := s.db.Where("release_id = ? AND ((object_key <> '' AND object_key = ?) OR (platform = ? AND architecture = ?))", releaseID, artifact.ObjectKey, artifact.Platform, artifact.Architecture).First(&existing).Error; err == nil {
 		// The artifact object or target already exists: override it instead of
 		// failing so re-uploads replace the previous artifact for that target.
-		return s.overrideArtifact(releaseID, existing, artifact)
+		return s.overrideArtifact(ctx, appID, releaseID, existing, artifact)
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, fmt.Errorf("check release artifact: %w", err)
 	}
@@ -566,15 +593,16 @@ func (s *ReleaseService) AddArtifact(ctx context.Context, appID, releaseID strin
 		if err := s.db.Where("release_id = ? AND (object_key = ? OR (platform = ? AND architecture = ?))", releaseID, artifact.ObjectKey, artifact.Platform, artifact.Architecture).First(&existing).Error; err != nil {
 			return nil, fmt.Errorf("check release artifact after conflict: %w", err)
 		}
-		return s.overrideArtifact(releaseID, existing, artifact)
+		return s.overrideArtifact(ctx, appID, releaseID, existing, artifact)
 	}
+	s.resyncEditedRelease(ctx, appID, releaseID)
 	return s.loadRelease(releaseID)
 }
 
 // overrideArtifact replaces an existing artifact row with a freshly built
 // artifact, preserving the row ID so existing download URLs and download
 // counts stay valid, and clearing any retention-expiry marker.
-func (s *ReleaseService) overrideArtifact(releaseID string, existing, artifact database.ReleaseArtifact) (*database.Release, error) {
+func (s *ReleaseService) overrideArtifact(ctx context.Context, appID, releaseID string, existing, artifact database.ReleaseArtifact) (*database.Release, error) {
 	updates := map[string]any{
 		"object_key":   artifact.ObjectKey,
 		"download_url": artifact.DownloadURL,
@@ -591,6 +619,7 @@ func (s *ReleaseService) overrideArtifact(releaseID string, existing, artifact d
 		Updates(updates).Error; err != nil {
 		return nil, fmt.Errorf("update release artifact: %w", err)
 	}
+	s.resyncEditedRelease(ctx, appID, releaseID)
 	return s.loadRelease(releaseID)
 }
 
@@ -710,6 +739,7 @@ func (s *ReleaseService) UpdateRelease(ctx context.Context, appID, releaseID str
 	if err != nil {
 		return nil, err
 	}
+	s.resyncEditedRelease(ctx, appID, releaseID)
 	return s.loadRelease(releaseID)
 }
 
@@ -892,8 +922,9 @@ func (s *ReleaseService) cleanupArtifactRetention(ctx context.Context, appID str
 	}
 }
 
-// DeleteRelease permanently removes a draft release and its metadata. Published
-// releases must be yanked instead so update history remains immutable.
+// DeleteRelease permanently removes a release and its metadata. A published
+// release retires at its destinations in the same transaction: the yank job
+// carries a snapshot, because the release row is gone before it is delivered.
 func (s *ReleaseService) DeleteRelease(ctx context.Context, appID, releaseID string) error {
 	if _, err := s.requireApp(ctx, appID, false); err != nil {
 		return err
@@ -902,9 +933,10 @@ func (s *ReleaseService) DeleteRelease(ctx context.Context, appID, releaseID str
 	if err != nil {
 		return err
 	}
-	if release.Status != database.ReleaseStatusDraft {
-		return fmt.Errorf("%w: only draft releases can be deleted", ErrConflict)
+	if release.Status == database.ReleaseStatusYanked {
+		return fmt.Errorf("%w: yanked releases cannot be deleted", ErrConflict)
 	}
+	snapshot := s.snapshotRelease(release)
 
 	objectKeys := make([]string, 0, len(release.Artifacts))
 	for _, artifact := range release.Artifacts {
@@ -913,6 +945,11 @@ func (s *ReleaseService) DeleteRelease(ctx context.Context, appID, releaseID str
 		}
 	}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if release.Status == database.ReleaseStatusPublished {
+			if err := s.enqueueDeleteSync(tx, appID, release.ID, snapshot); err != nil {
+				return err
+			}
+		}
 		if err := tx.Where("release_id = ?", release.ID).Delete(&database.ReleaseArtifact{}).Error; err != nil {
 			return fmt.Errorf("delete release artifacts: %w", err)
 		}
@@ -922,7 +959,7 @@ func (s *ReleaseService) DeleteRelease(ctx context.Context, appID, releaseID str
 		if err := tx.Where("resource_type = ? AND resource_id = ?", localizationRelease, release.ID).Delete(&database.Localization{}).Error; err != nil {
 			return fmt.Errorf("delete release localizations: %w", err)
 		}
-		if err := tx.Where("id = ? AND app_id = ? AND status = ?", release.ID, appID, database.ReleaseStatusDraft).Delete(&database.Release{}).Error; err != nil {
+		if err := tx.Where("id = ? AND app_id = ?", release.ID, appID).Delete(&database.Release{}).Error; err != nil {
 			return fmt.Errorf("delete release: %w", err)
 		}
 		return nil
@@ -933,7 +970,7 @@ func (s *ReleaseService) DeleteRelease(ctx context.Context, appID, releaseID str
 	if retentionStore, ok := s.artifacts.(ArtifactRetentionStore); ok {
 		for _, key := range objectKeys {
 			if err := retentionStore.Delete(ctx, key); err != nil {
-				slog.Warn("delete draft release artifact", "product_id", appID, "release_id", release.ID, "object_key", key, "error", err)
+				slog.Warn("delete release artifact", "product_id", appID, "release_id", release.ID, "object_key", key, "error", err)
 			}
 		}
 	}
@@ -1198,6 +1235,79 @@ func (s *ReleaseService) enqueueSync(tx *gorm.DB, productID, releaseID, action s
 		return fmt.Errorf("%w: enqueue release sync: %v", ErrDependency, err)
 	}
 	return nil
+}
+
+// snapshotRelease captures the description a destination needs to retire a
+// release after its row is deleted.
+func (s *ReleaseService) snapshotRelease(release *database.Release) ReleaseSyncSnapshot {
+	snapshot := ReleaseSyncSnapshot{
+		ProductID: release.AppID,
+		Version:   release.Version,
+		Title:     release.Title,
+		Notes:     release.ReleaseNotes,
+		Channels:  channelNames(release),
+	}
+	if product, err := s.loadProduct(release.AppID); err == nil {
+		snapshot.ProductSlug = product.Slug
+		snapshot.ProductName = product.Name
+	}
+	for _, channel := range snapshot.Channels {
+		if channel != string(database.ReleaseChannelStable) {
+			snapshot.Prerelease = true
+			break
+		}
+	}
+	for _, artifact := range release.Artifacts {
+		if artifact.ExpiredAt != nil {
+			continue
+		}
+		url := strings.TrimSpace(artifact.DownloadURL)
+		if url == "" {
+			if strings.TrimSpace(artifact.ObjectKey) == "" {
+				continue
+			}
+			base := strings.TrimRight(s.downloadBaseURL, "/")
+			if base == "" {
+				continue
+			}
+			url = base + "/artifacts/" + artifact.ID + "/download"
+		}
+		snapshot.Artifacts = append(snapshot.Artifacts, ReleaseSyncArtifact{
+			Name: artifact.FileName, Platform: artifact.Platform,
+			Architecture: artifact.Architecture, Size: artifact.Size, URL: url,
+		})
+	}
+	return snapshot
+}
+
+// enqueueDeleteSync retires a deleted release at its destinations.
+func (s *ReleaseService) enqueueDeleteSync(tx *gorm.DB, productID, releaseID string, snapshot ReleaseSyncSnapshot) error {
+	if s.syncEnqueuer == nil {
+		return nil
+	}
+	if err := s.syncEnqueuer.EnqueueDeleteForRelease(tx, productID, releaseID, snapshot); err != nil {
+		return fmt.Errorf("%w: enqueue release sync: %v", ErrDependency, err)
+	}
+	return nil
+}
+
+// resyncEditedRelease re-arms the publish delivery after an edit so
+// destinations pick up changed notes, title, channels, or artifacts. Only
+// already-published releases are re-delivered: a draft has no destination
+// release yet, and a yanked release must stay withdrawn. It runs outside the
+// edit transaction because the edit already committed; a failure here is
+// logged rather than failing the edit, and the delivery stays retryable.
+func (s *ReleaseService) resyncEditedRelease(ctx context.Context, appID, releaseID string) {
+	if s.syncEnqueuer == nil || s.db == nil {
+		return
+	}
+	release, err := s.loadReleaseWhere(releaseID, appID)
+	if err != nil || release.Status != database.ReleaseStatusPublished {
+		return
+	}
+	if err := s.syncEnqueuer.EnqueueForRelease(s.db.WithContext(ctx), appID, releaseID, "publish", channelNames(release)); err != nil {
+		slog.Warn("re-deliver edited release to destinations", "product_id", appID, "release_id", releaseID, "error", err)
+	}
 }
 
 func (s *ReleaseService) requireApp(ctx context.Context, appID string, production bool) (*gen.DyCustomApp, error) {

@@ -104,7 +104,7 @@ func (s *Service) execute(ctx context.Context, job database.SyncJob) (Result, er
 	if !ok {
 		return Result{}, fmt.Errorf("%w: provider %s is not enabled", errProviderDisabled, connection.Provider)
 	}
-	releasePayload, err := s.buildPayload(ctx, job, link, connection, payload)
+	releasePayload, err := s.payloadFor(ctx, job, link, connection, payload)
 	if err != nil {
 		return Result{}, err
 	}
@@ -124,6 +124,40 @@ func (s *Service) execute(ctx context.Context, job database.SyncJob) (Result, er
 	default:
 		return Result{}, Permanent(fmt.Errorf("unknown sync action %q", job.Action))
 	}
+}
+
+// payloadFor returns the payload a job delivers. A delete enqueues its yank in
+// the same transaction that removes the release, so the job carries a snapshot;
+// every other job reads the live release.
+func (s *Service) payloadFor(ctx context.Context, job database.SyncJob, link database.SyncLink, connection database.SyncConnection, _ map[string]string) (ReleasePayload, error) {
+	if snapshot, err := decodeSnapshot(job.Payload); err != nil {
+		return ReleasePayload{}, Permanent(err)
+	} else if snapshot.ProductID != "" || snapshot.Version != "" {
+		return s.payloadFromSnapshot(job.ReleaseID, snapshot, link, connection), nil
+	}
+	return s.buildPayload(ctx, job, link, connection, nil)
+}
+
+// payloadFromSnapshot rebuilds the destination payload without the release row.
+func (s *Service) payloadFromSnapshot(releaseID string, snapshot PayloadSnapshot, link database.SyncLink, connection database.SyncConnection) ReleasePayload {
+	payload := ReleasePayload{
+		ProductSlug: snapshot.ProductSlug,
+		ProductName: snapshot.ProductName,
+		ProductID:   snapshot.ProductID,
+		ReleaseID:   releaseID,
+		Version:     snapshot.Version,
+		Title:       snapshot.Title,
+		Notes:       snapshot.Notes,
+		Channels:    snapshot.Channels,
+		Prerelease:  snapshot.Prerelease,
+		Draft:       snapshot.Draft,
+		Artifacts:   snapshot.Artifacts,
+		Link:        Repository{Repository: link.Repository, BaseURL: connection.BaseURL},
+	}
+	if len(snapshot.Artifacts) > 0 {
+		payload.AssetURL = snapshot.Artifacts[0].URL
+	}
+	return payload
 }
 
 // buildPayload assembles the destination-neutral release description.
@@ -166,16 +200,14 @@ func (s *Service) buildPayload(ctx context.Context, job database.SyncJob, link d
 			}
 		}
 	}
+	// Every downloadable artifact is listed in the notes table; only one is
+	// uploaded, because a destination release expresses one download.
+	payload.Artifacts = s.artifactLinks(release)
+	if len(payload.Artifacts) > 0 {
+		payload.AssetURL = payload.Artifacts[0].URL
+	}
 	artifact, hasAsset := selectAsset(release)
-	if !hasAsset {
-		// A download_url-only artifact still has a public link worth carrying.
-		artifact, hasAsset = selectArtifact(release)
-	}
-	if !hasAsset {
-		return payload, nil
-	}
-	payload.AssetURL = s.artifactURL(artifact)
-	if strings.TrimSpace(artifact.ObjectKey) == "" || s.cfg.MaxAssetBytes == 0 || s.cfg.Artifacts == nil {
+	if !hasAsset || s.cfg.MaxAssetBytes == 0 || s.cfg.Artifacts == nil {
 		return payload, nil
 	}
 	if artifact.Size > s.cfg.MaxAssetBytes {
@@ -210,28 +242,52 @@ func (s *Service) artifactURL(artifact database.ReleaseArtifact) string {
 	return base + "/artifacts/" + artifact.ID + "/download"
 }
 
-// selectArtifact picks the artifact whose download link a destination release
-// should carry: the first by platform then architecture, ignoring expired rows.
-func selectArtifact(release *database.Release) (database.ReleaseArtifact, bool) {
-	return pickArtifact(release, false)
-}
-
-// selectAsset picks the artifact a destination can upload, which requires an
-// object-backed artifact.
-func selectAsset(release *database.Release) (database.ReleaseArtifact, bool) {
-	return pickArtifact(release, true)
-}
-
-func pickArtifact(release *database.Release, requireObject bool) (database.ReleaseArtifact, bool) {
-	candidates := make([]database.ReleaseArtifact, 0, len(release.Artifacts))
+// artifactLinks returns every non-expired downloadable artifact, ordered by
+// platform then architecture, with its public download URL. Artifacts without a
+// usable URL are skipped so the notes table never renders a dead link.
+func (s *Service) artifactLinks(release *database.Release) []ArtifactLink {
+	artifacts := make([]database.ReleaseArtifact, 0, len(release.Artifacts))
 	for _, artifact := range release.Artifacts {
 		if artifact.ExpiredAt != nil {
 			continue
 		}
-		if requireObject && strings.TrimSpace(artifact.ObjectKey) == "" {
+		if strings.TrimSpace(artifact.ObjectKey) == "" && strings.TrimSpace(artifact.DownloadURL) == "" {
 			continue
 		}
-		if strings.TrimSpace(artifact.ObjectKey) == "" && strings.TrimSpace(artifact.DownloadURL) == "" {
+		artifacts = append(artifacts, artifact)
+	}
+	sort.SliceStable(artifacts, func(i, j int) bool {
+		if artifacts[i].Platform != artifacts[j].Platform {
+			return artifacts[i].Platform < artifacts[j].Platform
+		}
+		if artifacts[i].Architecture != artifacts[j].Architecture {
+			return artifacts[i].Architecture < artifacts[j].Architecture
+		}
+		return artifacts[i].FileName < artifacts[j].FileName
+	})
+	links := make([]ArtifactLink, 0, len(artifacts))
+	for _, artifact := range artifacts {
+		url := s.artifactURL(artifact)
+		if url == "" {
+			continue
+		}
+		links = append(links, ArtifactLink{
+			Name:         artifact.FileName,
+			Platform:     artifact.Platform,
+			Architecture: artifact.Architecture,
+			Size:         artifact.Size,
+			URL:          url,
+		})
+	}
+	return links
+}
+
+// selectAsset picks the artifact a destination can upload: the first by
+// platform then architecture that is object-backed and not expired.
+func selectAsset(release *database.Release) (database.ReleaseArtifact, bool) {
+	candidates := make([]database.ReleaseArtifact, 0, len(release.Artifacts))
+	for _, artifact := range release.Artifacts {
+		if artifact.ExpiredAt != nil || strings.TrimSpace(artifact.ObjectKey) == "" {
 			continue
 		}
 		candidates = append(candidates, artifact)

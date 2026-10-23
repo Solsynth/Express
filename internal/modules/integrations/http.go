@@ -190,18 +190,4 @@ func statusError(status int, header http.Header, payload []byte) error {
 	return fmt.Errorf("destination returned %d: %s", status, errorBody(payload))
 }
 
-// appendArtifactURL adds a download link to notes for destinations that cannot
-// upload assets.
-func appendArtifactURL(notes, assetURL string) string {
-	assetURL = strings.TrimSpace(assetURL)
-	if assetURL == "" {
-		return notes
-	}
-	line := "Artifact: " + assetURL
-	if strings.TrimSpace(notes) == "" {
-		return line
-	}
-	return strings.TrimRight(notes, "\n") + "\n\n" + line
-}
-
 var errNoRelease = errors.New("release was never synced; nothing to yank")

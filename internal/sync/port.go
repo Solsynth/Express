@@ -8,11 +8,13 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"time"
 
+	"src.solsynth.dev/solsynth/distribution/internal/database"
 	"src.solsynth.dev/solsynth/distribution/internal/module"
 )
 
@@ -66,10 +68,127 @@ type ReleasePayload struct {
 	// Asset is nil when the release has no object-backed artifact or the
 	// configured asset limit forbids uploading one.
 	Asset *Asset
+	// Artifacts is every downloadable artifact with a public (never
+	// presigned) URL. Adapters that cannot upload assets render it as a table
+	// below the notes.
+	Artifacts []ArtifactLink
 	// AssetURL is the absolute public download URL ("" when no artifact).
-	// Adapters without asset upload append it to the notes.
 	AssetURL string
 	Link     Repository
+}
+
+// ArtifactLink is one row of the artifact table appended to release notes.
+type ArtifactLink struct {
+	Name         string
+	Platform     string
+	Architecture string
+	Size         int64
+	URL          string
+}
+
+// Description renders the release body a destination stores: the publisher's
+// notes followed by the artifact table when artifacts exist.
+func (p ReleasePayload) Description() string {
+	return releaseDescription(p.Notes, p.Artifacts)
+}
+
+// PayloadSnapshot is the minimum a yank needs after the release row is gone.
+// It is stored on the job so deletion can enqueue a delivery in the same
+// transaction that removes the release.
+type PayloadSnapshot struct {
+	ProductSlug string
+	ProductName string
+	ProductID   string
+	Version     string
+	Title       string
+	Notes       string
+	Channels    []string
+	Prerelease  bool
+	Draft       bool
+	Artifacts   []ArtifactLink
+}
+
+func (s PayloadSnapshot) encode() database.JSONMap {
+	if s.ProductID == "" && s.Version == "" {
+		return nil
+	}
+	encoded := database.JSONMap{
+		"product_slug": s.ProductSlug,
+		"product_name": s.ProductName,
+		"product_id":   s.ProductID,
+		"version":      s.Version,
+		"title":        s.Title,
+		"notes":        s.Notes,
+		"prerelease":   s.Prerelease,
+		"draft":        s.Draft,
+	}
+	if len(s.Channels) > 0 {
+		encoded["channels"] = stringSlice(s.Channels)
+	}
+	if len(s.Artifacts) > 0 {
+		artifacts := make([]any, 0, len(s.Artifacts))
+		for _, artifact := range s.Artifacts {
+			artifacts = append(artifacts, map[string]any{
+				"name":         artifact.Name,
+				"platform":     artifact.Platform,
+				"architecture": artifact.Architecture,
+				"size":         artifact.Size,
+				"url":          artifact.URL,
+			})
+		}
+		encoded["artifacts"] = artifacts
+	}
+	return encoded
+}
+
+// decodeSnapshot reads a stored snapshot; an empty map yields a zero value.
+func decodeSnapshot(stored database.JSONMap) (PayloadSnapshot, error) {
+	if len(stored) == 0 {
+		return PayloadSnapshot{}, nil
+	}
+	encoded, err := json.Marshal(stored)
+	if err != nil {
+		return PayloadSnapshot{}, fmt.Errorf("decode sync payload snapshot: %w", err)
+	}
+	var raw struct {
+		ProductSlug string   `json:"product_slug"`
+		ProductName string   `json:"product_name"`
+		ProductID   string   `json:"product_id"`
+		Version     string   `json:"version"`
+		Title       string   `json:"title"`
+		Notes       string   `json:"notes"`
+		Channels    []string `json:"channels"`
+		Prerelease  bool     `json:"prerelease"`
+		Draft       bool     `json:"draft"`
+		Artifacts   []struct {
+			Name         string `json:"name"`
+			Platform     string `json:"platform"`
+			Architecture string `json:"architecture"`
+			Size         int64  `json:"size"`
+			URL          string `json:"url"`
+		} `json:"artifacts"`
+	}
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		return PayloadSnapshot{}, fmt.Errorf("decode sync payload snapshot: %w", err)
+	}
+	snapshot := PayloadSnapshot{
+		ProductSlug: raw.ProductSlug,
+		ProductName: raw.ProductName,
+		ProductID:   raw.ProductID,
+		Version:     raw.Version,
+		Title:       raw.Title,
+		Notes:       raw.Notes,
+		Channels:    raw.Channels,
+		Prerelease:  raw.Prerelease,
+		Draft:       raw.Draft,
+	}
+	for _, artifact := range raw.Artifacts {
+		snapshot.Artifacts = append(snapshot.Artifacts, ArtifactLink{
+			Name: artifact.Name, Platform: artifact.Platform,
+			Architecture: artifact.Architecture, Size: artifact.Size, URL: artifact.URL,
+		})
+	}
+	return snapshot, nil
 }
 
 // Result records where a destination put the release.
