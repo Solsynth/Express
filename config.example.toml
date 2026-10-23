@@ -8,6 +8,11 @@ port = "8080"
 # but do not include /api.
 baseUrl = ""
 
+[web]
+# Directory holding the built console (web/dist). Leave empty to serve the API
+# only. The Docker image ships the console at /app/web/dist.
+distPath = ""
+
 [grpc]
 port = "9090"
 # Set true only when the fleet-issued certificate and key are mounted.

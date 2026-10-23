@@ -3,6 +3,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	gen "src.solsynth.dev/sosys/go/proto"
@@ -42,9 +43,13 @@ func (s *SphereDirectory) AuthenticateAccount(ctx context.Context, token string)
 		return service.AuthenticatedAccount{}, fmt.Errorf("invalid authentication token")
 	}
 	session := resp.GetSession()
+	account := session.GetAccount()
 	return service.AuthenticatedAccount{
 		ID:          session.GetAccountId(),
-		IsSuperuser: session.GetAccount().GetIsSuperuser(),
+		IsSuperuser: account.GetIsSuperuser(),
+		Name:        account.GetName(),
+		Nick:        account.GetNick(),
+		PictureURL:  account.GetPicture().GetUrl(),
 	}, nil
 }
 
@@ -79,9 +84,48 @@ func (s *SphereDirectory) IsPublisherMember(ctx context.Context, publisherID, ac
 	return resp != nil && resp.GetValid(), nil
 }
 
+// PublisherMemberships enumerates the publishers this account belongs to. The
+// listing is publisher-scoped by Sphere, so the console offers exactly the
+// publishers the account can already act on; the role comes from the member
+// listing because it is what decides which surfaces are useful.
+func (s *SphereDirectory) PublisherMemberships(ctx context.Context, accountID string) ([]service.PublisherMembership, error) {
+	if s == nil || s.publishers == nil {
+		return nil, fmt.Errorf("sphere publisher client is unavailable")
+	}
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return nil, fmt.Errorf("account id is required")
+	}
+	resp, err := s.publishers.ListPublishers(ctx, &gen.DyListPublishersRequest{AccountId: accountID})
+	if err != nil {
+		return nil, err
+	}
+	if resp == nil {
+		return nil, nil
+	}
+	memberships := make([]service.PublisherMembership, 0, len(resp.GetPublishers()))
+	for _, publisher := range resp.GetPublishers() {
+		if publisher == nil || strings.TrimSpace(publisher.GetId()) == "" {
+			continue
+		}
+		role := gen.DyPublisherMemberRole_DY_PUBLISHER_MEMBER_ROLE_UNSPECIFIED
+		if members, err := s.publishers.ListPublisherMembers(ctx, &gen.DyListPublisherMembersRequest{PublisherId: publisher.GetId()}); err == nil && members != nil {
+			for _, member := range members.GetMembers() {
+				if member != nil && member.GetAccountId() == accountID {
+					role = member.GetRole()
+					break
+				}
+			}
+		}
+		memberships = append(memberships, service.PublisherMembership{Publisher: publisher, Role: role})
+	}
+	return memberships, nil
+}
+
 var _ interface {
 	Authenticate(context.Context, string) (string, error)
 	AuthenticateAccount(context.Context, string) (service.AuthenticatedAccount, error)
 	GetPublisher(context.Context, string) (*gen.DyPublisher, error)
 	IsPublisherMember(context.Context, string, string, gen.DyPublisherMemberRole) (bool, error)
+	PublisherMemberships(context.Context, string) ([]service.PublisherMembership, error)
 } = (*SphereDirectory)(nil)

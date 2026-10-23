@@ -408,3 +408,42 @@ go vet ./...
 ```
 
 The marketplace API contract is documented in [`docs/MARKETPLACE_API.md`](docs/MARKETPLACE_API.md).
+
+## Web console
+
+`web/` is the publisher console: the marketplace, a publisher's products, and
+the release console that uploads artifacts and publishes versions. It is a Vue
+3 + Vite single-page app served by DistributionCenter itself, laid out as a top
+bar plus a publisher/product sidebar with one wide work column.
+
+Build it into `web/dist` and point the service at it:
+
+```bash
+make web
+```
+
+```toml
+[web]
+distPath = "web/dist"
+```
+
+The service then serves the console at `/` and keeps `/api`, `/artifacts`, and
+the health routes for itself. Leaving `distPath` empty keeps the deployment
+API-only. The Docker image ships the console at `/app/web/dist`, so a container
+needs no extra volume.
+
+Two processes for development — the Go API on `:8080`, Vite on `:5173` with
+every backend path proxied:
+
+```bash
+make run          # terminal one
+make web-dev      # terminal two
+```
+
+The console reads the session from the `AuthToken` cookie Stargate sets on the
+shared cookie domain, so a deployment reaches it signed in. `VITE_AUTH_URL`
+overrides the identity host's sign-in page for the signed-out hand-off;
+`VITE_API_TARGET` overrides the proxy target.
+
+Console design and copy conventions are documented in
+[`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).

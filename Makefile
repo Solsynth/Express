@@ -1,6 +1,13 @@
 SERVICE := distribution
 
-.PHONY: run build build-cli build-express test check
+.PHONY: run build build-cli build-express test check web web-dev
+
+# Build the console into web/dist; the service serves it from [web] distPath.
+web:
+	cd web && bun install --frozen-lockfile && bun run build
+
+web-dev:
+	cd web && bun run dev
 
 build-cli build-express:
 	mkdir -p bin

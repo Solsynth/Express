@@ -36,10 +36,15 @@ var (
 )
 
 // AuthenticatedAccount is the account identity returned by the auth service.
-// IsSuperuser mirrors the auth service's global permission bypass.
+// IsSuperuser mirrors the auth service's global permission bypass. The
+// presentation fields are what the console prints in its header; they are
+// empty when the deployment's auth service does not return them.
 type AuthenticatedAccount struct {
 	ID          string
 	IsSuperuser bool
+	Name        string
+	Nick        string
+	PictureURL  string
 }
 
 // AccountAuthenticator is an optional extension implemented by integrations
@@ -52,6 +57,20 @@ type PublisherDirectory interface {
 	Authenticate(context.Context, string) (string, error)
 	GetPublisher(context.Context, string) (*gen.DyPublisher, error)
 	IsPublisherMember(context.Context, string, string, gen.DyPublisherMemberRole) (bool, error)
+}
+
+// PublisherMembership is one publisher an account belongs to, with the role
+// that decides which console surfaces are offered for it.
+type PublisherMembership struct {
+	Publisher *gen.DyPublisher
+	Role      gen.DyPublisherMemberRole
+}
+
+// MembershipDirectory is the optional extension a directory implements when
+// it can enumerate an account's publishers. The console session needs it; the
+// marketplace routes do not.
+type MembershipDirectory interface {
+	PublisherMemberships(context.Context, string) ([]PublisherMembership, error)
 }
 
 // AppDirectory is the revision-1 compatibility contract. New deployments use

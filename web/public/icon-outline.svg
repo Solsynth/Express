@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" fill="none">
+    <style>
+        /* Browser chrome decides the favicon backdrop, so follow the OS. */
+        @media (prefers-color-scheme: light) {
+            path { stroke: #1c2334; }
+        }
+    </style>
+    <path stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"
+        d="M96 40 152 72 96 104 40 72 96 40Z" />
+    <path stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"
+        d="M40 72v48l56 32 56-32V72" />
+    <path stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="10"
+        d="M96 104v48" />
+</svg>

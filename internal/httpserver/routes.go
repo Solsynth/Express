@@ -34,15 +34,15 @@ type createReleaseRequest struct {
 }
 
 type updateReleaseRequest struct {
-	Version      string            `json:"version"`
-	Channel      string            `json:"channel,omitempty"`
-	Channels     []string          `json:"channels"`
-	ReleaseNotes string            `json:"release_notes"`
-	Title        string            `json:"title"`
-	Titles       map[string]string `json:"titles,omitempty"`
-	Metadata     database.JSONMap  `json:"metadata,omitempty"`
-	ForceUpdate  bool              `json:"force_update"`
-	Descriptions map[string]string `json:"descriptions,omitempty"`
+	Version      string                          `json:"version"`
+	Channel      string                          `json:"channel,omitempty"`
+	Channels     []string                        `json:"channels"`
+	ReleaseNotes string                          `json:"release_notes"`
+	Title        string                          `json:"title"`
+	Titles       map[string]string               `json:"titles,omitempty"`
+	Metadata     database.JSONMap                `json:"metadata,omitempty"`
+	ForceUpdate  bool                            `json:"force_update"`
+	Descriptions map[string]string               `json:"descriptions,omitempty"`
 	Attachments  database.CloudFileReferenceList `json:"attachments,omitempty"`
 }
 
@@ -83,23 +83,23 @@ type uploadURLRequest struct {
 	Version  string `json:"version"`
 }
 type ReleaseView struct {
-	ID           string                          `json:"id"`
-	ProductID    string                          `json:"product_id"`
-	Version      string                          `json:"version"`
-	Channel      string                          `json:"channel,omitempty"`
-	Channels     []string                        `json:"channels"`
-	ReleaseNotes string                          `json:"release_notes"`
-	Title        string                          `json:"title"`
-	Titles       map[string]string               `json:"titles,omitempty"`
-	Metadata     database.JSONMap                `json:"metadata,omitempty"`
-	ForceUpdate  bool                            `json:"force_update"`
-	Descriptions map[string]string               `json:"descriptions,omitempty"`
-	Attachments  database.CloudFileReferenceList `json:"attachments,omitempty"`
-	Status         string                          `json:"status"`
-	CreatedAt      *time.Time                      `json:"created_at,omitempty"`
-	PublishedAt    *time.Time                      `json:"published_at"`
-	DownloadCount  int64                           `json:"download_count"`
-	Artifacts      []ArtifactView                  `json:"artifacts"`
+	ID            string                          `json:"id"`
+	ProductID     string                          `json:"product_id"`
+	Version       string                          `json:"version"`
+	Channel       string                          `json:"channel,omitempty"`
+	Channels      []string                        `json:"channels"`
+	ReleaseNotes  string                          `json:"release_notes"`
+	Title         string                          `json:"title"`
+	Titles        map[string]string               `json:"titles,omitempty"`
+	Metadata      database.JSONMap                `json:"metadata,omitempty"`
+	ForceUpdate   bool                            `json:"force_update"`
+	Descriptions  map[string]string               `json:"descriptions,omitempty"`
+	Attachments   database.CloudFileReferenceList `json:"attachments,omitempty"`
+	Status        string                          `json:"status"`
+	CreatedAt     *time.Time                      `json:"created_at,omitempty"`
+	PublishedAt   *time.Time                      `json:"published_at"`
+	DownloadCount int64                           `json:"download_count"`
+	Artifacts     []ArtifactView                  `json:"artifacts"`
 }
 
 // ArtifactView is the unauthenticated artifact representation. It carries only
@@ -145,6 +145,7 @@ func RegisterPublisherRoutes(engine *gin.Engine, releases *service.ReleaseServic
 	publisher.POST("/products", publisherBearer(releases, publishers, true, service.PermissionProductsCreate), createProduct(releases, publishers))
 	engine.GET("/api/marketplace/apps", listMarketplaceApps(releases))
 	engine.GET("/api/apps", listMarketplaceApps(releases))
+	registerConsoleRoutes(engine, releases, publishers)
 
 	group := engine.Group("/api/products/:productID")
 	group.GET("", getProduct(releases))
@@ -1021,6 +1022,7 @@ func releaseView(release *database.Release, store service.ArtifactDownloadStore)
 	view := &ReleaseView{Artifacts: make([]ArtifactView, 0, len(release.Artifacts)), Channels: make([]string, 0, len(release.Channels)), Title: release.Title, Titles: release.Titles, Metadata: release.Metadata, ForceUpdate: release.ForceUpdate, Descriptions: release.Descriptions, Attachments: release.Attachments, CreatedAt: createdAt}
 	view.ID, view.ProductID, view.Version = release.ID, release.AppID, release.Version
 	view.Channel, view.ReleaseNotes, view.Status = string(release.Channel), release.ReleaseNotes, string(release.Status)
+	view.PublishedAt = release.PublishedAt
 	view.DownloadCount = release.DownloadCount
 	for _, channel := range release.Channels {
 		view.Channels = append(view.Channels, channel.Name)

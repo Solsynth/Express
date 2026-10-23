@@ -23,6 +23,13 @@ type Config struct {
 		BaseURL string `toml:"baseUrl"`
 	} `toml:"http"`
 
+	// Web configures hosting of the built SPA (web/dist). The zero value
+	// disables static hosting and leaves the server API-only; the Docker image
+	// enables it for /app/web/dist.
+	Web struct {
+		DistPath string `toml:"distPath"`
+	} `toml:"web"`
+
 	GRPC struct {
 		Port     string `toml:"port"`
 		UseTLS   bool   `toml:"useTLS"`
@@ -237,6 +244,7 @@ func applyEnvOverrides(cfg *Config) {
 	setStr("DISTRIBUTION_VERSION", &cfg.Version)
 	setStr("DISTRIBUTION_HTTP_PORT", &cfg.HTTP.Port)
 	setStr("DISTRIBUTION_HTTP_BASE_URL", &cfg.HTTP.BaseURL)
+	setStr("DISTRIBUTION_WEB_DIST_PATH", &cfg.Web.DistPath)
 	setStr("DISTRIBUTION_GRPC_PORT", &cfg.GRPC.Port)
 	setBool("DISTRIBUTION_GRPC_USETLS", &cfg.GRPC.UseTLS)
 	setStr("DISTRIBUTION_GRPC_CERT_FILE", &cfg.GRPC.CertFile)

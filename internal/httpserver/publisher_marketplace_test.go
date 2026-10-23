@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/driver/sqlite"
@@ -348,5 +349,82 @@ func TestPublisherRoutesRequireFineGrainedPermissions(t *testing.T) {
 	}
 	if len(checker.calls) != 2 {
 		t.Fatalf("superuser permission calls = %v, want no additional permission check", checker.calls)
+	}
+}
+
+// A published release must report when it was published: the console sorts and
+// labels by that stamp, and a null one reads as "never released" on a release
+// clients can already download.
+func TestPublishedReleaseViewCarriesPublishedAt(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:http-published-at-test?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&database.Product{}, &database.Channel{}, &database.Release{}, &database.ReleaseArtifact{}, &database.ClientCheck{}, &database.Localization{}, &database.UploadAPIKey{}); err != nil {
+		t.Fatal(err)
+	}
+	publisherID, productID := uuid.NewString(), uuid.NewString()
+	if err := db.Create(&database.Product{ID: productID, PublisherID: publisherID, Slug: "client", Name: "Client"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	directory := &httpPublisherDirectory{accountID: uuid.NewString(), publisher: &gen.DyPublisher{Id: publisherID, Name: "Example"}}
+	releases := service.NewPublisherReleaseService(db, directory, nil, nil)
+	server := New(config.Default())
+	RegisterPublisherRoutes(server.Engine, releases, directory, config.Default())
+
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/products/"+productID+"/releases", strings.NewReader(`{"version":"2.0.0","channels":["stable"]}`))
+	createRequest.Header.Set("Authorization", "Bearer sphere-token")
+	created := httptest.NewRecorder()
+	server.Engine.ServeHTTP(created, createRequest)
+	if created.Code != http.StatusCreated {
+		t.Fatalf("create release status = %d, body = %s", created.Code, created.Body.String())
+	}
+	var draft struct {
+		ID          string  `json:"id"`
+		PublishedAt *string `json:"published_at"`
+	}
+	if err := json.Unmarshal(created.Body.Bytes(), &draft); err != nil {
+		t.Fatal(err)
+	}
+	if draft.PublishedAt != nil {
+		t.Fatalf("draft published_at = %v, want null", *draft.PublishedAt)
+	}
+
+	// An external artifact keeps the publish path free of storage calls.
+	attachRequest := httptest.NewRequest(http.MethodPost, "/api/products/"+productID+"/releases/"+draft.ID+"/artifacts", strings.NewReader(`{"download_url":"https://downloads.example/client.tar.gz","file_name":"client.tar.gz","mime_type":"application/gzip","size":10,"hash":"sha","platform":"macos","architecture":"arm64"}`))
+	attachRequest.Header.Set("Authorization", "Bearer sphere-token")
+	attached := httptest.NewRecorder()
+	server.Engine.ServeHTTP(attached, attachRequest)
+	if attached.Code != http.StatusCreated {
+		t.Fatalf("attach artifact status = %d, body = %s", attached.Code, attached.Body.String())
+	}
+
+	publishRequest := httptest.NewRequest(http.MethodPost, "/api/products/"+productID+"/releases/"+draft.ID+"/publish", nil)
+	publishRequest.Header.Set("Authorization", "Bearer sphere-token")
+	published := httptest.NewRecorder()
+	server.Engine.ServeHTTP(published, publishRequest)
+	if published.Code != http.StatusOK {
+		t.Fatalf("publish status = %d, body = %s", published.Code, published.Body.String())
+	}
+	var release struct {
+		Status      string  `json:"status"`
+		PublishedAt *string `json:"published_at"`
+	}
+	if err := json.Unmarshal(published.Body.Bytes(), &release); err != nil {
+		t.Fatal(err)
+	}
+	if release.Status != "published" || release.PublishedAt == nil {
+		t.Fatalf("published release = %+v, want a published_at stamp", release)
+	}
+	if _, err := time.Parse(time.RFC3339, *release.PublishedAt); err != nil {
+		t.Fatalf("published_at %q is not RFC3339: %v", *release.PublishedAt, err)
+	}
+
+	// The public listing has to agree with the publish response, because the
+	// marketplace reads only the listing.
+	listing := httptest.NewRecorder()
+	server.Engine.ServeHTTP(listing, httptest.NewRequest(http.MethodGet, "/api/marketplace/apps", nil))
+	if listing.Code != http.StatusOK || !strings.Contains(listing.Body.String(), `"published_at":"`) {
+		t.Fatalf("marketplace status = %d, body = %s", listing.Code, listing.Body.String())
 	}
 }
