@@ -8,6 +8,10 @@
 package develop
 
 import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -234,14 +238,108 @@ func (c *CustomAppOauthConfig) HasScope(scope string) bool {
 	return false
 }
 
+// VerificationMarkType mirrors VerificationMarkType in the identity service.
+// The order matches that enum, because the stored numeric value is its ordinal.
+type VerificationMarkType int
+
+const (
+	VerificationOfficial VerificationMarkType = iota
+	VerificationIndividual
+	VerificationOrganization
+	VerificationGovernment
+	VerificationCreator
+	VerificationDeveloper
+	VerificationParody
+)
+
+// TypeName is the lowercase word the API returns for a verification mark.
+func (t VerificationMarkType) TypeName() string {
+	switch t {
+	case VerificationOfficial:
+		return "official"
+	case VerificationIndividual:
+		return "individual"
+	case VerificationOrganization:
+		return "organization"
+	case VerificationGovernment:
+		return "government"
+	case VerificationCreator:
+		return "creator"
+	case VerificationDeveloper:
+		return "developer"
+	case VerificationParody:
+		return "parody"
+	default:
+		return ""
+	}
+}
+
+// MarshalJSON writes the type as its word, not its ordinal. Access tokens carry
+// verification marks, and Stargate reads that field as a word.
+func (t VerificationMarkType) MarshalJSON() ([]byte, error) {
+	name := t.TypeName()
+	if name == "" {
+		return []byte("null"), nil
+	}
+	return json.Marshal(name)
+}
+
+// UnmarshalJSON reads either the word or the ordinal, so a mark written by the
+// identity service and one written by the importer both load.
+func (t *VerificationMarkType) UnmarshalJSON(raw []byte) error {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "null" || trimmed == "" {
+		*t = VerificationIndividual
+		return nil
+	}
+	if ordinal, err := strconv.Atoi(trimmed); err == nil {
+		*t = VerificationMarkType(ordinal)
+		return nil
+	}
+	var word string
+	if err := json.Unmarshal(raw, &word); err != nil {
+		return fmt.Errorf("decode verification mark type: %w", err)
+	}
+	parsed, ok := ParseVerificationMarkType(word)
+	if !ok {
+		// A word this build does not know must not fail the whole row.
+		*t = VerificationIndividual
+		return nil
+	}
+	*t = parsed
+	return nil
+}
+
+// ParseVerificationMarkType maps an API word to its enum value.
+func ParseVerificationMarkType(value string) (VerificationMarkType, bool) {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "official":
+		return VerificationOfficial, true
+	case "", "individual":
+		return VerificationIndividual, true
+	case "organization":
+		return VerificationOrganization, true
+	case "government":
+		return VerificationGovernment, true
+	case "creator":
+		return VerificationCreator, true
+	case "developer":
+		return VerificationDeveloper, true
+	case "parody":
+		return VerificationParody, true
+	default:
+		return VerificationIndividual, false
+	}
+}
+
 // VerificationMark mirrors the identity service's verification mark.
 type VerificationMark struct {
-	Type        string    `json:"type"`
-	Title       string    `json:"title,omitempty"`
-	Description string    `json:"description,omitempty"`
-	VerifiedBy  string    `json:"verified_by,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Type        VerificationMarkType `json:"type"`
+	Title       string               `json:"title,omitempty"`
+	Description string               `json:"description,omitempty"`
+	VerifiedBy  string               `json:"verified_by,omitempty"`
+	CreatedAt   time.Time            `json:"created_at"`
+	UpdatedAt   time.Time            `json:"updated_at"`
 }
 
 // CustomApp is an application published by a developer project.
@@ -307,7 +405,8 @@ func (s *CustomAppSecret) SecretTypeName() string {
 	return "api_key"
 }
 
-// BoardFieldType describes one field of a board widget payload.
+// BoardFieldType describes one field of a board widget payload. A stored value
+// may carry either key spelling, which Go's field matching already folds.
 type BoardFieldType struct {
 	Name     string `json:"name"`
 	Type     string `json:"type"`

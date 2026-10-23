@@ -235,7 +235,7 @@ PGPASSWORD=… ./scripts/import-develop.sh
 ```
 
 The script builds `cmd/distribution-import`, defaults the databases to
-`dyson_develop` → `dyson_distribution`, and imports every portal module in
+`solar_develop` → `solardist`, and imports every portal module in
 dependency order: developers → projects → apps → bots/miniapps → products.
 
 ```bash
@@ -245,8 +245,8 @@ dependency order: developers → projects → apps → bots/miniapps → product
 # Or call the binary directly against any DSN.
 go run ./cmd/distribution-import \
   --module all \
-  --source-dsn "postgres://…/dyson_develop" \
-  --target-dsn "postgres://…/dyson_distribution"
+  --source-dsn "postgres://…/solar_develop" \
+  --target-dsn "postgres://…/solardist"
 ```
 
 The importer:

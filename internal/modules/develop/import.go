@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"time"
+	"unicode"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -250,15 +251,93 @@ func deletedAt(value sql.NullTime) gorm.DeletedAt {
 
 // decodeJSON unmarshals a jsonb column into a typed field. A null or empty
 // column leaves the target nil.
+//
+// The legacy source writes these columns with the property names of its own
+// model, which are PascalCase, while the portal's struct tags are snake_case.
+// A plain unmarshal does not fail on that: it matches no field and leaves the
+// value zero, so an oauth_config silently loses every scope and redirect.
+// Keys are therefore folded before decoding, always.
 func decodeJSON(raw []byte, target any) error {
 	if len(raw) == 0 {
 		return nil
 	}
-	if err := json.Unmarshal(raw, target); err != nil {
+	normalized, err := normalizeJSONKeys(raw)
+	if err != nil {
+		return fmt.Errorf("decode jsonb: %w", err)
+	}
+	if err := json.Unmarshal(normalized, target); err != nil {
 		return fmt.Errorf("decode jsonb: %w", err)
 	}
 	return nil
 }
+
+// normalizeJSONKeys rewrites every object key to snake_case, so the source's
+// "ClientUri" and the target's "client_uri" match. Array elements and non-string
+// scalars are untouched.
+func normalizeJSONKeys(raw []byte) ([]byte, error) {
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, err
+	}
+	return json.Marshal(normalizeJSONValue(value))
+}
+
+func normalizeJSONValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		normalized := make(map[string]any, len(typed))
+		for key, child := range typed {
+			normalized[normalizeJSONKey(key)] = normalizeJSONValue(child)
+		}
+		return normalized
+	case []any:
+		for index := range typed {
+			typed[index] = normalizeJSONValue(typed[index])
+		}
+		return typed
+	default:
+		return value
+	}
+}
+
+// normalizeJSONKey renders a property name in snake_case. A key that is
+// already snake_case is returned unchanged, so the same decoder reads a column
+// written here and one written by the legacy source.
+func normalizeJSONKey(key string) string {
+	key = strings.TrimSpace(key)
+	var builder strings.Builder
+	builder.Grow(len(key) + 4)
+	runes := []rune(key)
+	for index, current := range runes {
+		if current == '_' {
+			builder.WriteRune('_')
+			continue
+		}
+		if isUpperRune(current) {
+			previousExists := index > 0
+			previous := rune(0)
+			if previousExists {
+				previous = runes[index-1]
+			}
+			nextIsLower := index+1 < len(runes) && !isUpperRune(runes[index+1])
+			// A boundary is a capital that follows a lower case or digit, or
+			// the last capital of an acronym before a lower case letter.
+			boundary := previousExists && (isLowerRune(previous) || isDigitRune(previous)) ||
+				(previousExists && isUpperRune(previous) && nextIsLower)
+			if boundary {
+				builder.WriteRune('_')
+			}
+			builder.WriteRune(unicode.ToLower(current))
+			continue
+		}
+		builder.WriteRune(current)
+	}
+	return builder.String()
+}
+
+func isUpperRune(r rune) bool { return r >= 'A' && r <= 'Z' }
+func isLowerRune(r rune) bool { return r >= 'a' && r <= 'z' }
+func isDigitRune(r rune) bool { return r >= '0' && r <= '9' }
 
 // cloudFile decodes a jsonb cloud-file reference.
 func cloudFile(raw []byte) (*database.CloudFileReference, error) {

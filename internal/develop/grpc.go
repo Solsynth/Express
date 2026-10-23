@@ -320,21 +320,21 @@ func appStatusToProto(status CustomAppStatus) gen.DyCustomAppStatus {
 	}
 }
 
-func verificationTypeToProto(value string) gen.DyVerificationMarkType {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "official":
+func verificationTypeToProto(value VerificationMarkType) gen.DyVerificationMarkType {
+	switch value {
+	case VerificationOfficial:
 		return gen.DyVerificationMarkType_DY_OFFICIAL
-	case "individual":
+	case VerificationIndividual:
 		return gen.DyVerificationMarkType_DY_INDIVIDUAL
-	case "organization":
+	case VerificationOrganization:
 		return gen.DyVerificationMarkType_DY_ORGANIZATION
-	case "government":
+	case VerificationGovernment:
 		return gen.DyVerificationMarkType_DY_GOVERNMENT
-	case "creator":
+	case VerificationCreator:
 		return gen.DyVerificationMarkType_DY_CREATOR
-	case "developer":
+	case VerificationDeveloper:
 		return gen.DyVerificationMarkType_DY_DEVELOPER
-	case "parody":
+	case VerificationParody:
 		return gen.DyVerificationMarkType_DY_PARODY
 	default:
 		return gen.DyVerificationMarkType_DY_VERIFICATION_MARK_TYPE_UNSPECIFIED

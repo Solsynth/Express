@@ -79,28 +79,34 @@ func seedLegacyDevelop(t *testing.T, db *gorm.DB) {
 	inserts := []string{
 		`INSERT INTO developers VALUES ('dev-1', 'pub-1')`,
 		`INSERT INTO dev_projects VALUES ('proj-1','island','Island','A project','dev-1','` + now + `','` + now + `',NULL)`,
+		// The JSON payloads below are written the way the legacy service's own
+		// serializer writes them: PascalCase keys, and enums as their ordinal.
+		// A fixture in the portal's own snake_case would hide the key-matching
+		// bug that silently drops every oauth scope.
 		`INSERT INTO custom_apps VALUES ('app-1','island','Island','An app',2,
-			'{"id":"file-1","name":"icon.png","file_meta":{},"user_meta":{}}',
-			NULL,NULL,
-			'{"client_uri":"https://example.test","redirect_uris":["https://example.test/cb"],"allowed_scopes":["openid","accounts.profile.board"],"allowed_grant_types":["authorization_code"],"require_pkce":true}',
-			'{"home_page":"https://example.test"}',
+			'{"Id":"file-1","Name":"icon.png","FileMeta":{},"UserMeta":{}}',
+			NULL,
+			'{"Type":5,"Title":"Verified","Description":"A verified app","VerifiedBy":"admin"}',
+			'{"ClientUri":"https://example.test","RedirectUris":["https://example.test/cb"],"AllowedScopes":["openid","accounts.profile.board"],"AllowedGrantTypes":["authorization_code"],"RequirePkce":true,"AllowOfflineAccess":false,"IsPublicClient":false}',
+			'{"HomePage":"https://example.test"}',
 			'wallet-1','proj-1','` + now + `','` + now + `',NULL)`,
 		`INSERT INTO custom_app_secrets VALUES ('sec-1','s3cr3t','ci',NULL,0,'app-1','` + now + `','` + now + `',NULL)`,
 		`INSERT INTO board_widgets VALUES ('wid-1','app-1','steps','Steps','Step count',
 			1,'data','object',
-			'[{"name":"steps","type":"number","label":"Steps","required":true}]',
+			'[{"Name":"steps","Type":"number","Label":"Steps","Required":true}]',
 			'["steps"]',512,1,'` + now + `','` + now + `',NULL)`,
 		`INSERT INTO bot_accounts VALUES ('bot-1','helper',1,'proj-1','` + now + `','` + now + `',NULL)`,
 		`INSERT INTO bot_chat_configs VALUES ('bot-1',
-			'[{"name":"/help","description":"Help"}]',1,0,1,'["messages.new"]',
+			'[{"Name":"/help","Description":"Help","Parameters":[{"Name":"topic","Required":true,"Type":"string"}]}]',1,0,1,'["messages.new"]',
 			'` + now + `','` + now + `',NULL)`,
 		`INSERT INTO mini_apps VALUES ('mini-1','counter','dev.example.counter','Counter','1.2.0',
-			'Example','A counter','index.html',NULL,NULL,NULL,
+			'Example','A counter','index.html',
+			'{"Id":"icon-1","Name":"icon.png","FileMeta":{},"UserMeta":{}}',NULL,NULL,
 			'https://cdn.test/counter.zip','plugins/mini-1/pkg.zip','abc123',2048,7,2,
-			'{"id":"dev.example.counter","name":"Counter","version":"1.2.0","entry":"main.js","permissions":[],"background":false,"entry_url":"index.html"}',
+			'{"Id":"dev.example.counter","Name":"Counter","Version":"1.2.0","Entry":"main.js","Permissions":[],"Background":false,"EntryUrl":"index.html"}',
 			'proj-1','` + now + `','` + now + `',NULL)`,
 		`INSERT INTO app_products VALUES ('prod-1','pro','Pro','The pro tier','CNY',12.5,
-			NULL,NULL,'{"is_address_required":false,"required_scopes":["pro"]}',
+			NULL,NULL,'{"IsAddressRequired":false,"RequiredScopes":["pro"]}',
 			'app-1',2,'group-1','` + now + `','` + now + `',NULL)`,
 		`INSERT INTO app_product_states VALUES ('state-1',1,5,10,NULL,NULL,'prod-1','` + now + `','` + now + `',NULL)`,
 	}
@@ -182,6 +188,28 @@ func TestImportAllModules(t *testing.T) {
 		t.Fatalf("picture = %q", app.Picture)
 	}
 
+	// The source wrote these columns with PascalCase keys and an ordinal enum.
+	// Asserting the decoded values, not just that a value exists, is what makes
+	// a silent key mismatch fail here instead of in production.
+	if !contains(app.OauthConfig, `"client_uri":"https://example.test"`) ||
+		!contains(app.OauthConfig, `"require_pkce":true`) ||
+		!contains(app.OauthConfig, `"redirect_uris":["https://example.test/cb"]`) {
+		t.Fatalf("oauth config lost its values: %q", app.OauthConfig)
+	}
+
+	var verification struct {
+		Verification string
+	}
+	if err := target.Raw(`SELECT verification FROM custom_apps WHERE id = 'app-1'`).
+		Scan(&verification).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !contains(verification.Verification, `"type":"developer"`) ||
+		!contains(verification.Verification, `"title":"Verified"`) ||
+		!contains(verification.Verification, `"verified_by":"admin"`) {
+		t.Fatalf("verification = %q", verification.Verification)
+	}
+
 	var widget struct {
 		FieldTypes      string
 		RequiredFields  string
@@ -211,6 +239,11 @@ func TestImportAllModules(t *testing.T) {
 	if mini.PluginID != "dev.example.counter" || mini.DownloadCount != 7 || mini.Stage != 2 {
 		t.Fatalf("mini app = %+v", mini)
 	}
+	// The manifest arrived with PascalCase keys and must still carry its values.
+	if !contains(mini.Manifest, `"id":"dev.example.counter"`) ||
+		!contains(mini.Manifest, `"entry_url":"index.html"`) {
+		t.Fatalf("mini app manifest = %q", mini.Manifest)
+	}
 
 	var product struct {
 		Price       float64
@@ -224,7 +257,8 @@ func TestImportAllModules(t *testing.T) {
 	if product.Price != 12.5 || product.Recurrence != 2 {
 		t.Fatalf("product = %+v", product)
 	}
-	if !contains(product.Fulfillment, `"pro"`) {
+	if !contains(product.Fulfillment, `"required_scopes":["pro"]`) ||
+		!contains(product.Fulfillment, `"is_address_required":false`) {
 		t.Fatalf("fulfillment = %q", product.Fulfillment)
 	}
 }

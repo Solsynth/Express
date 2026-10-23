@@ -21,7 +21,7 @@
 #   ./scripts/import-develop.sh --module app.solian.develop.apps
 #
 #   # Override the databases or pass extra flags:
-#   SOURCE_DB=dyson_develop TARGET_DB=dyson_distribution \
+#   SOURCE_DB=solar_develop TARGET_DB=solardist \
 #     ./scripts/import-develop.sh --batch-size 200
 #
 # Expect skipped rows and read them:
@@ -42,8 +42,8 @@
 #   PGUSER         (default: snchan)
 #   PGPASSWORD     required; read from env, never echoed
 #   PGSSLMODE      (default: disable)
-#   SOURCE_DB      (default: dyson_develop)
-#   TARGET_DB      (default: dyson_distribution)
+#   SOURCE_DB      (default: solar_develop)
+#   TARGET_DB      (default: solardist)
 #   PGDRY=1        shortcut for --dry-run
 
 set -euo pipefail
@@ -59,8 +59,8 @@ if [ -z "${PGPASSWORD:-}" ]; then
 fi
 export PGPASSWORD
 
-SOURCE_DB="${SOURCE_DB:-dyson_develop}"
-TARGET_DB="${TARGET_DB:-dyson_distribution}"
+SOURCE_DB="${SOURCE_DB:-solar_develop}"
+TARGET_DB="${TARGET_DB:-solardist}"
 
 DSN_BASE="host=${PGHOST} port=${PGPORT} user=${PGUSER} password=${PGPASSWORD} sslmode=${PGSSLMODE}"
 SOURCE_DSN="${DSN_BASE} dbname=${SOURCE_DB}"
@@ -84,7 +84,10 @@ echo
 # (developers -> apps -> bots/miniapps -> products).
 has_module=0
 for arg in "$@"; do
-  if [ "$arg" = "--module" ]; then has_module=1; break; fi
+  if [ "$arg" = "--module" ]; then
+    has_module=1
+    break
+  fi
 done
 ARGS=("--source-dsn" "$SOURCE_DSN" "--target-dsn" "$TARGET_DSN")
 if [ "$has_module" = "0" ]; then
