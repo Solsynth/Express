@@ -25,10 +25,15 @@ RUN CGO_ENABLED=0 go build -trimpath \
 	-o /out/distribution ./cmd/distribution
 
 FROM gcr.io/distroless/static-debian12:nonroot
-COPY --from=build /out/distribution /distribution
+# Work from /app so the loader's default config path and the relative [web]
+# distPath both resolve inside the image: it reads ./config.example.toml and
+# "web/dist" against this directory, so the console lands at /app/web/dist.
+WORKDIR /app
+COPY --from=build /out/distribution /app/distribution
 COPY --from=web /web/dist /app/web/dist
-COPY config.example.toml /config.example.toml
+COPY config.example.toml /app/config.example.toml
 
 USER nonroot:nonroot
 EXPOSE 8080 9090
-ENTRYPOINT ["/distribution"]
+ENTRYPOINT ["/app/distribution"]
+

@@ -407,6 +407,21 @@ go test ./...
 go vet ./...
 ```
 
+Two processes for console development, with Vite on `:5173` proxying every
+backend path:
+
+```bash
+make run          # terminal one, Go API on :8080
+make web-dev      # terminal two, Vite on :5173
+```
+
+`VITE_API_TARGET` overrides the dev proxy target and `VITE_AUTH_URL` the
+identity host's sign-in page. Run the console's own checks from `web/`:
+
+```bash
+bun run type-check && bun run test:unit --run && bun run build-only
+```
+
 The marketplace API contract is documented in [`docs/MARKETPLACE_API.md`](docs/MARKETPLACE_API.md).
 
 ## Web console
@@ -417,7 +432,7 @@ the release console that uploads artifacts and publishes versions. It is a Vue
 bar, and a publisher/product sidebar on the console routes where the
 navigation tree exists.
 
-Build it into `web/dist` and point the service at it:
+Build it into `web/dist`:
 
 ```bash
 make web
@@ -430,21 +445,36 @@ distPath = "web/dist"
 
 The service then serves the console at `/` and keeps `/api`, `/artifacts`, and
 the health routes for itself. Leaving `distPath` empty keeps the deployment
-API-only. The Docker image ships the console at `/app/web/dist`, so a container
-needs no extra volume.
+API-only. Startup logs which state it is in — `console mounted`,
+`console disabled`, or `console not mounted` with the reason — so a missing
+build does not read as a routing bug.
 
-Two processes for development — the Go API on `:8080`, Vite on `:5173` with
-every backend path proxied:
+### Container
+
+The image builds the console in its own stage and places it at `/app/web/dist`,
+then runs from `/app` so the default `distPath = "web/dist"` resolves without
+extra configuration. Mount a real config at deploy time; the baked
+`config.example.toml` is a template and still needs `database.dsn`, the service
+targets, and an S3 bucket:
 
 ```bash
-make run          # terminal one
-make web-dev      # terminal two
+docker run -p 8080:8080 -p 9090:9090 \
+  -e CONFIG_PATH=/app/config.toml \
+  -v "$PWD/config.toml:/app/config.toml" \
+  ghcr.io/$PACKAGE_OWNER/distribution
 ```
 
+`CONFIG_PATH` is required here: the loader's default file name is
+`config.example.toml` (the baked template), so a mounted `config.toml` is only
+read when the variable names it. Mount your file over
+`/app/config.example.toml` instead if you would rather not set the variable.
+Every setting also has an environment override, so a deployment can skip the
+file entirely — `DISTRIBUTION_DATABASE_DSN`, `DISTRIBUTION_AUTH_TARGET`,
+`DISTRIBUTION_SPHERE_TARGET`, the `DISTRIBUTION_S3_*` keys, and
+`DISTRIBUTION_WEB_DIST_PATH` for the console location.
+
 The console reads the session from the `AuthToken` cookie Stargate sets on the
-shared cookie domain, so a deployment reaches it signed in. `VITE_AUTH_URL`
-overrides the identity host's sign-in page for the signed-out hand-off;
-`VITE_API_TARGET` overrides the proxy target.
+shared cookie domain, so a deployment reaches it signed in.
 
 Console design and copy conventions are documented in
 [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).

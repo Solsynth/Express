@@ -9,9 +9,10 @@ port = "8080"
 baseUrl = ""
 
 [web]
-# Directory holding the built console (web/dist). Leave empty to serve the API
-# only. The Docker image ships the console at /app/web/dist.
-distPath = ""
+# Directory holding the built console. Leave empty to serve the API only.
+# "web/dist" is the repo checkout and the Docker image, which both place the
+# built console under the process working directory.
+distPath = "web/dist"
 
 [grpc]
 port = "9090"

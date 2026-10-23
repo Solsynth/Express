@@ -1,7 +1,22 @@
+# VCS and CI
 .git
 .github
+
+# Go build output
 bin
 dist
+*.test
+
+# Runtime secrets (mounted at deploy time)
 Keys
 config.toml
 *.local
+
+# SPA dependencies and build output: the image installs and builds these in
+# their own stage, so the host's copies must not enter the build context. A
+# host node_modules is built for the host platform and would overwrite the
+# container's install after the lockfile step.
+web/node_modules
+web/dist
+web/.vite
+web/node_modules/.tmp

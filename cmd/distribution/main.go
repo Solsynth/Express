@@ -77,6 +77,16 @@ func run(log *slog.Logger) error {
 	defer marketplaceApp.Stop(context.Background())
 	httpSurface := marketplaceApp.HTTPServer
 	httpSurface.SetReady(false)
+	// A misconfigured [web] distPath serves the API and answers 404 for the
+	// console, which looks like a routing bug rather than a missing build. Say
+	// which state the process is in, at the level each one deserves.
+	if httpSurface.WebError != nil {
+		log.Warn("console not mounted", "dist_path", cfg.Web.DistPath, "error", httpSurface.WebError)
+	} else if strings.TrimSpace(cfg.Web.DistPath) != "" {
+		log.Info("console mounted", "dist_path", cfg.Web.DistPath)
+	} else {
+		log.Info("console disabled", "reason", "web.distPath is empty")
+	}
 
 	grpcOptions := make([]grpc.ServerOption, 0, 1)
 	if cfg.GRPC.UseTLS {
