@@ -2,6 +2,10 @@
 
 DistributionCenter is the release control plane for Solsynth Express products. It stores publisher-owned products, channels, release metadata, and artifact references exposed through the marketplace API.
 
+It also hosts the developer portal: developers, projects, custom apps, app
+products, bot accounts, and mini apps. See `docs/DEVELOPER_PORTAL.md` for the
+route contract and `[develop]` configuration.
+
 The repository also contains the `express` CLI for managing marketplace products and releases.
 
 ## Requirements
@@ -432,6 +436,29 @@ bun run type-check && bun run test:unit --run && bun run build-only
 ```
 
 The marketplace API contract is documented in [`docs/MARKETPLACE_API.md`](docs/MARKETPLACE_API.md).
+
+## Developer portal
+
+The portal replaces the standalone Develop service and keeps its HTTP paths and
+permission nodes, so existing clients and grants carry over. Custom apps moved
+to `/api/custom-apps` because the marketplace keeps `/api/apps`.
+
+It is compiled in as five modules and enabled by default:
+
+```toml
+[modules]
+disabled = [
+  "app.solian.develop.developers",
+  "app.solian.develop.apps",
+  "app.solian.develop.bots",
+  "app.solian.develop.miniapps",
+  "app.solian.develop.products",
+]
+```
+
+`GET /api/modules` lists which ones a process mounted. `DyCustomAppService` is
+served on the gRPC port while `app.solian.develop.apps` is enabled, which is the
+contract Passport and Wallet already call.
 
 ## Web console
 

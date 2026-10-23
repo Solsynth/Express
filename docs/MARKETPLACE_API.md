@@ -3,7 +3,8 @@
 DistributionCenter is the release control plane for publisher-owned products. Sphere
 owns accounts, publishers, publisher membership, and bearer-token authentication.
 DistributionCenter stores products, immutable release metadata, channels, and
-S3 object metadata. It never treats a Develop custom app as a product identity.
+S3 object metadata. It never treats a developer-portal custom app as a product
+identity; the two namespaces stay separate (see `DEVELOPER_PORTAL.md`).
 
 ## Ownership model
 

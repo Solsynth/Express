@@ -50,7 +50,28 @@ func (s *SphereDirectory) AuthenticateAccount(ctx context.Context, token string)
 		Name:        account.GetName(),
 		Nick:        account.GetNick(),
 		PictureURL:  account.GetPicture().GetUrl(),
+		SessionID:   session.GetId(),
+		SessionType: sessionTypeName(session.GetType()),
+		Scopes:      session.GetScopes(),
 	}, nil
+}
+
+// sessionTypeName maps the auth session kind onto the lowercase word route
+// authorization compares. Unknown kinds report an empty string, which never
+// matches an OAuth session and therefore keeps permission-scope gating off.
+func sessionTypeName(kind gen.DySessionType) string {
+	switch kind {
+	case gen.DySessionType_DY_LOGIN:
+		return "login"
+	case gen.DySessionType_DY_OAUTH:
+		return "oauth"
+	case gen.DySessionType_DY_OIDC:
+		return "oidc"
+	case gen.DySessionType_DY_API_KEY:
+		return "api_key"
+	default:
+		return ""
+	}
 }
 
 func (s *SphereDirectory) GetPublisher(ctx context.Context, publisherRef string) (*gen.DyPublisher, error) {

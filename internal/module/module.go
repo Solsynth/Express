@@ -93,6 +93,11 @@ type Host struct {
 	// Settings is the decoded [modules.settings."<id>"] subtree.
 	Settings map[string]map[string]any
 
+	// GRPC collects gRPC service registrations. The process creates the gRPC
+	// server after modules configure, so modules register here and the binary
+	// applies them once the server exists.
+	GRPC *GRPCRegistry
+
 	Log *slog.Logger
 }
 

@@ -11,9 +11,13 @@ import (
 	"google.golang.org/grpc"
 	gen "src.solsynth.dev/sosys/go/proto"
 
+	"src.solsynth.dev/solsynth/distribution/internal/authz"
 	"src.solsynth.dev/solsynth/distribution/internal/config"
 	"src.solsynth.dev/solsynth/distribution/internal/core"
 	"src.solsynth.dev/solsynth/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/develop"
+	"src.solsynth.dev/solsynth/distribution/internal/developadapter"
+	"src.solsynth.dev/solsynth/distribution/internal/developapi"
 	"src.solsynth.dev/solsynth/distribution/internal/eventbus"
 	"src.solsynth.dev/solsynth/distribution/internal/httpserver"
 	"src.solsynth.dev/solsynth/distribution/internal/integration"
@@ -37,6 +41,14 @@ type App struct {
 	Host               *module.Host
 	Factories          []module.Factory
 	Modules            []module.Instance
+
+	// DevelopService is the developer-portal domain. It is nil when every
+	// portal module is disabled.
+	DevelopService *develop.Service
+	// DevelopConnections are the portal's optional gRPC dependencies.
+	DevelopConnections *developadapter.Connections
+	// GRPCServices collects module-contributed gRPC registrations.
+	GRPCServices *module.GRPCRegistry
 }
 
 // New composes the process. The logger is threaded into module.Host so modules
@@ -118,7 +130,33 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 	// module routes share the same /api group.
 	httpserver.RegisterPublisherRoutes(httpServer.Engine, releases, publishers, cfg)
 
-	services := &core.Services{Config: cfg, DB: db, Releases: releases, Publishers: publishers, Artifacts: artifacts, Events: events, Log: log}
+	// The developer portal is composed only when a portal module is enabled, so
+	// a deployment without it never dials the extra gRPC dependencies.
+	developService, developConnections, err := composeDevelop(cfg, db, authConn, sphereConn, artifacts, resolution)
+	if err != nil {
+		_ = sphereConn.Close()
+		_ = authConn.Close()
+		cleanup()
+		return nil, err
+	}
+
+	services := &core.Services{
+		Config:     cfg,
+		DB:         db,
+		Releases:   releases,
+		Publishers: publishers,
+		Artifacts:  artifacts,
+		Events:     events,
+		Develop:    developService,
+		Log:        log,
+	}
+	if developConnections != nil {
+		services.Sudo = authz.NewSudoValidator(gen.NewDyAuthServiceClient(authConn))
+		// The console session reports the portal's permission nodes so its
+		// controls render for an account that holds them.
+		httpserver.AddConsolePermissions(developapi.PortalPermissions...)
+	}
+	grpcServices := module.NewGRPCRegistry()
 	host := &module.Host{
 		Core:     services,
 		Engine:   httpServer.Engine,
@@ -126,6 +164,7 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		Ports:    module.NewPortRegistry(),
 		Enabled:  resolution.Enabled,
 		Settings: cfg.Modules.Settings,
+		GRPC:     grpcServices,
 		Log:      log,
 	}
 	host.Ports.Select(cfg.Ports)
@@ -142,6 +181,9 @@ func New(cfg *config.Config, log *slog.Logger) (*App, error) {
 		EventBus:           events,
 		Host:               host,
 		Factories:          resolution.Factories,
+		DevelopService:     developService,
+		DevelopConnections: developConnections,
+		GRPCServices:       grpcServices,
 	}
 	registerModuleRoutes(httpServer.Engine, resolution.Factories)
 
@@ -185,6 +227,11 @@ func (a *App) startModules(ctx context.Context) error {
 			return &module.BuildError{Module: factory.ID, Err: err}
 		}
 	}
+	// Module-contributed gRPC services register after configuration so a module
+	// can gate its contract on the same settings its routes use.
+	if err := registerPortalGRPC(a.GRPCServices, a.DevelopService, a.Host.Enabled); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -225,6 +272,9 @@ func (a *App) Stop(ctx context.Context) error {
 		if err := a.Modules[index].Stop(ctx); err != nil {
 			a.log().Warn("stop module", "index", index, "error", err)
 		}
+	}
+	if a.DevelopConnections != nil {
+		a.DevelopConnections.Close()
 	}
 	if a.EventBus != nil {
 		a.EventBus.Close()

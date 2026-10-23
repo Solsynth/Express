@@ -46,6 +46,15 @@ func NewS3Store(cfg *config.Config) (*S3Store, error) {
 	return &S3Store{client: client, bucket: bucket}, nil
 }
 
+// Client exposes the underlying MinIO client and bucket so other features can
+// store objects in the same artifact pool.
+func (s *S3Store) Client() (*minio.Client, string) {
+	if s == nil {
+		return nil, ""
+	}
+	return s.client, s.bucket
+}
+
 func (s *S3Store) Head(ctx context.Context, objectKey string) (*service.ArtifactMetadata, error) {
 	info, err := s.client.StatObject(ctx, s.bucket, objectKey, minio.StatObjectOptions{Checksum: true})
 	if err != nil {

@@ -49,6 +49,23 @@ var consolePermissions = []string{
 	service.PermissionSyncManage,
 }
 
+// AddConsolePermissions extends the session lookup with the nodes a mounted
+// module gates on, so the console offers its controls instead of failing them
+// with 403. Duplicates are ignored.
+func AddConsolePermissions(keys ...string) {
+	existing := make(map[string]bool, len(consolePermissions))
+	for _, key := range consolePermissions {
+		existing[key] = true
+	}
+	for _, key := range keys {
+		if key == "" || existing[key] {
+			continue
+		}
+		existing[key] = true
+		consolePermissions = append(consolePermissions, key)
+	}
+}
+
 // registerConsoleRoutes mounts the console's own session surface. It answers
 // who the cookie belongs to and what that account may operate, so the SPA can
 // render its navigation without probing every gated route.

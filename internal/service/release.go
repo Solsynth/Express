@@ -45,6 +45,14 @@ type AuthenticatedAccount struct {
 	Name        string
 	Nick        string
 	PictureURL  string
+
+	// SessionID identifies the auth session, which step-up ("sudo") checks
+	// validate against the auth service.
+	SessionID string
+	// SessionType is the lowercase session kind: login, oauth, oidc, api_key.
+	SessionType string
+	// Scopes narrow an OAuth session's effective permissions.
+	Scopes []string
 }
 
 // AccountAuthenticator is an optional extension implemented by integrations

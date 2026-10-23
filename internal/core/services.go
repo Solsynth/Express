@@ -6,8 +6,10 @@ package core
 import (
 	"log/slog"
 
+	"src.solsynth.dev/solsynth/distribution/internal/authz"
 	"src.solsynth.dev/solsynth/distribution/internal/config"
 	"src.solsynth.dev/solsynth/distribution/internal/database"
+	"src.solsynth.dev/solsynth/distribution/internal/develop"
 	"src.solsynth.dev/solsynth/distribution/internal/eventbus"
 	"src.solsynth.dev/solsynth/distribution/internal/service"
 )
@@ -24,5 +26,10 @@ type Services struct {
 	Publishers service.PublisherDirectory
 	Artifacts  service.ArtifactStore
 	Events     *eventbus.Bus
-	Log        *slog.Logger
+	// Develop is the developer-portal domain shared by the portal modules. It
+	// is nil when no portal module is enabled.
+	Develop *develop.Service
+	// Sudo validates step-up elevation for developer-portal mutations.
+	Sudo authz.SudoValidator
+	Log  *slog.Logger
 }

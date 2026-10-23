@@ -100,8 +100,51 @@ type Config struct {
 	// Ports selects the module that provides a shared port
 	// (port id -> module id).
 	Ports map[string]string `toml:"ports"`
+	Sync  SyncConfig        `toml:"sync"`
 
-	Sync SyncConfig `toml:"sync"`
+	Develop DevelopConfig `toml:"develop"`
+}
+
+// DevelopConfig configures the developer portal modules: the remote services
+// they call and where mini app packages are stored.
+type DevelopConfig struct {
+	// Files resolves cloud-file references (app pictures, mini app icons).
+	Files ServiceTargetConfig `toml:"files"`
+	// Accounts reads accounts for bot quota tiers and transparency lookups.
+	Accounts ServiceTargetConfig `toml:"accounts"`
+	// Realms resolves realm ownership for organisation publishers.
+	Realms ServiceTargetConfig `toml:"realms"`
+	// Profiles writes account board payloads on behalf of a consenting user.
+	Profiles ServiceTargetConfig `toml:"profiles"`
+	// Wallet registers recurring app products as subscription definitions.
+	Wallet ServiceTargetConfig `toml:"wallet"`
+	// ActionLog records developer-program audit entries.
+	ActionLog ServiceTargetConfig `toml:"actionLog"`
+	// Packages configures mini app archive storage. An empty bucket disables
+	// package upload and download while leaving metadata management available.
+	Packages PackageStorageConfig `toml:"packages"`
+}
+
+// ServiceTargetConfig names one gRPC dependency.
+type ServiceTargetConfig struct {
+	Target        string `toml:"target"`
+	UseTLS        bool   `toml:"useTLS"`
+	TLSSkipVerify bool   `toml:"tlsSkipVerify"`
+}
+
+// Enabled reports whether a target was configured.
+func (s ServiceTargetConfig) Enabled() bool { return strings.TrimSpace(s.Target) != "" }
+
+// PackageStorageConfig configures mini app archive storage. It defaults to the
+// process's artifact bucket so a deployment needs one object store.
+type PackageStorageConfig struct {
+	// KeyPrefix is the object-key prefix. Defaults to "plugins".
+	KeyPrefix string `toml:"keyPrefix"`
+	// PublicBaseURL, when set, is prepended to object keys to produce the
+	// package_url returned to clients. Empty keeps downloads proxied.
+	PublicBaseURL string `toml:"publicBaseUrl"`
+	// MaxBytes caps one uploaded archive. Defaults to 5 MiB.
+	MaxBytes int64 `toml:"maxBytes"`
 }
 
 // HandoffConfig names the relying-app side of the identity hand-off.
@@ -227,6 +270,15 @@ func (c *Config) Validate() error {
 	if c.Sync.BatchSize < 1 {
 		return fmt.Errorf("sync.batchSize must be at least 1")
 	}
+	if c.Develop.Packages.MaxBytes < 0 {
+		return fmt.Errorf("develop.packages.maxBytes must be zero or greater")
+	}
+	if baseURL := strings.TrimSpace(c.Develop.Packages.PublicBaseURL); baseURL != "" {
+		parsed, err := url.Parse(baseURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("develop.packages.publicBaseUrl must be an absolute HTTP(S) URL")
+		}
+	}
 	return nil
 }
 
@@ -250,6 +302,8 @@ func Default() *Config {
 	cfg.Sync.MaxAttempts = 8
 	cfg.Sync.MaxAssetBytes = 2147483648
 	cfg.Sync.BatchSize = 16
+	cfg.Develop.Packages.KeyPrefix = "plugins"
+	cfg.Develop.Packages.MaxBytes = 5 * 1024 * 1024
 	return cfg
 }
 
@@ -324,6 +378,27 @@ func applyEnvOverrides(cfg *Config) {
 	setInt("DISTRIBUTION_SYNC_MAX_ATTEMPTS", &cfg.Sync.MaxAttempts)
 	setInt64("DISTRIBUTION_SYNC_MAX_ASSET_BYTES", &cfg.Sync.MaxAssetBytes)
 	setInt("DISTRIBUTION_SYNC_BATCH_SIZE", &cfg.Sync.BatchSize)
+	setStr("DISTRIBUTION_DEVELOP_FILES_TARGET", &cfg.Develop.Files.Target)
+	setBool("DISTRIBUTION_DEVELOP_FILES_USETLS", &cfg.Develop.Files.UseTLS)
+	setBool("DISTRIBUTION_DEVELOP_FILES_TLS_SKIP_VERIFY", &cfg.Develop.Files.TLSSkipVerify)
+	setStr("DISTRIBUTION_DEVELOP_ACCOUNTS_TARGET", &cfg.Develop.Accounts.Target)
+	setBool("DISTRIBUTION_DEVELOP_ACCOUNTS_USETLS", &cfg.Develop.Accounts.UseTLS)
+	setBool("DISTRIBUTION_DEVELOP_ACCOUNTS_TLS_SKIP_VERIFY", &cfg.Develop.Accounts.TLSSkipVerify)
+	setStr("DISTRIBUTION_DEVELOP_PROFILES_TARGET", &cfg.Develop.Profiles.Target)
+	setBool("DISTRIBUTION_DEVELOP_PROFILES_USETLS", &cfg.Develop.Profiles.UseTLS)
+	setBool("DISTRIBUTION_DEVELOP_PROFILES_TLS_SKIP_VERIFY", &cfg.Develop.Profiles.TLSSkipVerify)
+	setStr("DISTRIBUTION_DEVELOP_REALMS_TARGET", &cfg.Develop.Realms.Target)
+	setBool("DISTRIBUTION_DEVELOP_REALMS_USETLS", &cfg.Develop.Realms.UseTLS)
+	setBool("DISTRIBUTION_DEVELOP_REALMS_TLS_SKIP_VERIFY", &cfg.Develop.Realms.TLSSkipVerify)
+	setStr("DISTRIBUTION_DEVELOP_WALLET_TARGET", &cfg.Develop.Wallet.Target)
+	setBool("DISTRIBUTION_DEVELOP_WALLET_USETLS", &cfg.Develop.Wallet.UseTLS)
+	setBool("DISTRIBUTION_DEVELOP_WALLET_TLS_SKIP_VERIFY", &cfg.Develop.Wallet.TLSSkipVerify)
+	setStr("DISTRIBUTION_DEVELOP_ACTIONLOG_TARGET", &cfg.Develop.ActionLog.Target)
+	setBool("DISTRIBUTION_DEVELOP_ACTIONLOG_USETLS", &cfg.Develop.ActionLog.UseTLS)
+	setBool("DISTRIBUTION_DEVELOP_ACTIONLOG_TLS_SKIP_VERIFY", &cfg.Develop.ActionLog.TLSSkipVerify)
+	setStr("DISTRIBUTION_DEVELOP_PACKAGES_KEY_PREFIX", &cfg.Develop.Packages.KeyPrefix)
+	setStr("DISTRIBUTION_DEVELOP_PACKAGES_PUBLIC_BASE_URL", &cfg.Develop.Packages.PublicBaseURL)
+	setInt64("DISTRIBUTION_DEVELOP_PACKAGES_MAX_BYTES", &cfg.Develop.Packages.MaxBytes)
 	setStr("DISTRIBUTION_HANDOFF_BASE_URL", &cfg.Handoff.BaseURL)
 	setStr("DISTRIBUTION_HANDOFF_CLIENT_ID", &cfg.Handoff.ClientID)
 	setStr("DISTRIBUTION_HANDOFF_CLIENT_SECRET", &cfg.Handoff.ClientSecret)

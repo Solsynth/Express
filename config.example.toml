@@ -116,6 +116,49 @@ disabled = []
 # so this is not required for release mirroring.
 # syncTargets = "app.solian.sync.github"
 
+[develop.files]
+# Cloud-file lookups for app pictures, mini app icons, and product art.
+target = "drive:9090"
+useTLS = false
+tlsSkipVerify = false
+
+[develop.accounts]
+# Account reads for bot quota tiers and bot transparency.
+target = "passport:9090"
+useTLS = false
+tlsSkipVerify = false
+
+[develop.profiles]
+# Board payload writes on behalf of a consenting account.
+target = "passport:9090"
+useTLS = false
+tlsSkipVerify = false
+
+[develop.realms]
+# Realm ownership, so an organisation publisher counts toward its owner's quota.
+target = "passport:9090"
+useTLS = false
+tlsSkipVerify = false
+
+[develop.wallet]
+# Subscription definitions for recurring app products.
+target = "wallet:9090"
+useTLS = false
+tlsSkipVerify = false
+
+[develop.actionLog]
+# Audit entries for developer-program actions.
+target = "stargate:9090"
+useTLS = false
+tlsSkipVerify = false
+
+[develop.packages]
+# Mini app archives share the [s3] bucket under their own prefix.
+keyPrefix = "plugins"
+# Empty keeps downloads proxied through this service.
+publicBaseUrl = ""
+maxBytes = 5242880
+
 [sync]
 # Seals destination credentials at rest: base64 of a 32-byte key, or 64 hex
 # characters. Required while app.solian.distribution.sync is enabled; a key

@@ -103,6 +103,14 @@ func run(log *slog.Logger) error {
 		})))
 	}
 	grpcSurface, healthSurface := grpcserver.New(grpcOptions...)
+	// Module-contributed contracts (the developer portal's DyCustomAppService)
+	// register on the same server the fleet dials.
+	if marketplaceApp.GRPCServices != nil {
+		marketplaceApp.GRPCServices.Apply(grpcSurface)
+		for _, name := range marketplaceApp.GRPCServices.Services() {
+			log.Info("grpc service registered", "service", name)
+		}
+	}
 	reflection.Register(grpcSurface)
 	healthSurface.SetServingStatus("", grpc_health_v1.HealthCheckResponse_SERVING)
 
