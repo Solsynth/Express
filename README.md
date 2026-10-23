@@ -479,11 +479,44 @@ read when the variable names it. Mount your file over
 `/app/config.example.toml` instead if you would rather not set the variable.
 Every setting also has an environment override, so a deployment can skip the
 file entirely — `DISTRIBUTION_DATABASE_DSN`, `DISTRIBUTION_AUTH_TARGET`,
-`DISTRIBUTION_SPHERE_TARGET`, the `DISTRIBUTION_S3_*` keys, and
-`DISTRIBUTION_WEB_DIST_PATH` for the console location.
+`DISTRIBUTION_SPHERE_TARGET`, the `DISTRIBUTION_S3_*` keys,
+`DISTRIBUTION_WEB_DIST_PATH` for the console location, and
+`DISTRIBUTION_HANDOFF_*` for sign-in.
 
-The console reads the session from the `AuthToken` cookie Stargate sets on the
-shared cookie domain, so a deployment reaches it signed in.
+### Sign-in
+
+The console never shares a cookie with the identity host: a cookie has one
+`Domain` attribute and cannot span `id.solian.app` and `dx.solsynth.dev`. The
+session moves by a one-time code instead.
+
+1. "Sign in" opens `{handoff.baseUrl}/sign-in?redirectUri={this page}`.
+2. The identity console signs the person in on its own domain and redirects
+   back to this page with `?code=…`.
+3. The console POSTs that code to `/api/auth/session`; this server redeems it
+   at the issuer and sets its **own** `AuthToken` and `RefreshToken` cookies on
+   `handoff.cookieDomain` — this deployment's domain, not the identity host's.
+4. The console strips `code` from the address bar immediately. The tokens never
+   appear in a URL.
+
+An expired access token is renewed in place: a 401 makes the console call
+`/api/auth/refresh` once (shared by concurrent requests) and repeat the request,
+so a short token lifetime does not end a session. `/api/auth/logout` clears this
+console's cookies. All three routes answer `503` while `[handoff]` is
+unconfigured.
+
+```toml
+[handoff]
+baseUrl = "https://id.solian.app"
+clientId = "app.solian.express"
+clientSecret = ""            # empty makes this a public client (PKCE only)
+cookieDomain = "dx.solsynth.dev"
+cookieSecure = true
+```
+
+The client id must be registered with the issuer, with this console's host
+listed among its allowed redirect hosts. `DISTRIBUTION_HANDOFF_*` overrides
+every field. Bearer-token clients are unaffected: the API still accepts
+`Authorization: Bearer` and the cookie on every other route.
 
 Console design and copy conventions are documented in
 [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).

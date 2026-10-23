@@ -62,64 +62,75 @@ func registerConsoleRoutes(engine *gin.Engine, releases *service.ReleaseService,
 			writeError(c, service.ErrUnauthorized)
 			return
 		}
-		account, err := authenticatePublisher(c.Request.Context(), publishers, token)
-		accountID := strings.TrimSpace(account.ID)
-		if err != nil || accountID == "" {
-			writeError(c, service.ErrUnauthorized)
+		view, err := buildConsoleSession(c, releases, publishers, token)
+		if err != nil {
+			writeError(c, err)
 			return
 		}
-
-		view := consoleSessionView{
-			Account: consoleAccountView{
-				ID:          accountID,
-				Name:        account.Name,
-				Nick:        account.Nick,
-				IsSuperuser: account.IsSuperuser,
-				Picture:     account.PictureURL,
-			},
-			Publishers:  []consolePublisherView{},
-			Permissions: []string{},
-		}
-
-		// A directory that cannot enumerate memberships still serves the
-		// marketplace; the console then offers no publisher workspace rather
-		// than failing the whole session.
-		if directory, ok := publishers.(service.MembershipDirectory); ok {
-			memberships, err := directory.PublisherMemberships(c.Request.Context(), accountID)
-			if err != nil {
-				writeError(c, service.ErrDependency)
-				return
-			}
-			for _, membership := range memberships {
-				publisher := membership.Publisher
-				if publisher == nil {
-					continue
-				}
-				view.Publishers = append(view.Publishers, consolePublisherView{
-					ID:      publisher.GetId(),
-					Name:    publisher.GetName(),
-					Nick:    publisher.GetNick(),
-					Role:    publisherRoleName(membership.Role),
-					Picture: publisher.GetPicture().GetUrl(),
-				})
-			}
-		}
-
-		// Superusers bypass the fine-grained check on the server, so the
-		// console reports the same effective set instead of an empty list.
-		if account.IsSuperuser {
-			view.Permissions = append(view.Permissions, consolePermissions...)
-		} else {
-			for _, key := range consolePermissions {
-				if err := releases.RequireAccountPermission(c.Request.Context(), accountID, key); err == nil {
-					view.Permissions = append(view.Permissions, key)
-				}
-			}
-		}
-
 		c.Header("Cache-Control", "no-store")
 		c.JSON(http.StatusOK, view)
 	})
+}
+
+// buildConsoleSession resolves one token into the account, its publisher
+// memberships, and the permission nodes it holds. Both the cookie-authenticated
+// route and the hand-off redeem route answer with this one shape, so the
+// console parses a single session body however it signed in.
+func buildConsoleSession(c *gin.Context, releases *service.ReleaseService, publishers service.PublisherDirectory, token string) (consoleSessionView, error) {
+	account, err := authenticatePublisher(c.Request.Context(), publishers, token)
+	accountID := strings.TrimSpace(account.ID)
+	if err != nil || accountID == "" {
+		return consoleSessionView{}, service.ErrUnauthorized
+	}
+
+	view := consoleSessionView{
+		Account: consoleAccountView{
+			ID:          accountID,
+			Name:        account.Name,
+			Nick:        account.Nick,
+			IsSuperuser: account.IsSuperuser,
+			Picture:     account.PictureURL,
+		},
+		Publishers:  []consolePublisherView{},
+		Permissions: []string{},
+	}
+
+	// A directory that cannot enumerate memberships still serves the
+	// marketplace; the console then offers no publisher workspace rather
+	// than failing the whole session.
+	if directory, ok := publishers.(service.MembershipDirectory); ok {
+		memberships, err := directory.PublisherMemberships(c.Request.Context(), accountID)
+		if err != nil {
+			return consoleSessionView{}, service.ErrDependency
+		}
+		for _, membership := range memberships {
+			publisher := membership.Publisher
+			if publisher == nil {
+				continue
+			}
+			view.Publishers = append(view.Publishers, consolePublisherView{
+				ID:      publisher.GetId(),
+				Name:    publisher.GetName(),
+				Nick:    publisher.GetNick(),
+				Role:    publisherRoleName(membership.Role),
+				Picture: publisher.GetPicture().GetUrl(),
+			})
+		}
+	}
+
+	// Superusers bypass the fine-grained check on the server, so the
+	// console reports the same effective set instead of an empty list.
+	if account.IsSuperuser {
+		view.Permissions = append(view.Permissions, consolePermissions...)
+	} else {
+		for _, key := range consolePermissions {
+			if err := releases.RequireAccountPermission(c.Request.Context(), accountID, key); err == nil {
+				view.Permissions = append(view.Permissions, key)
+			}
+		}
+	}
+
+	return view, nil
 }
 
 // publisherRoleName maps the membership role to the lowercase word the console

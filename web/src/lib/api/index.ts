@@ -23,9 +23,27 @@ import type {
  * The signed-in account, its publisher memberships, and the permission nodes
  * it holds. The console uses the permission list to hide surfaces the account
  * cannot operate, so a control never ends in a 403.
+ *
+ * `redeem` is the hand-off exchange: it answers with the same body as `me`,
+ * so the console loads one shape whether it arrived signed in or just
+ * exchanged a code. `refresh` and `logout` opt out of the 401 retry: a
+ * refused refresh is the answer, not a reason to refresh again.
  */
 export const sessionApi = {
   me: () => request<ConsoleSession>('/console/session'),
+  redeem: (code: string) =>
+    request<ConsoleSession>('/auth/session', {
+      method: 'POST',
+      body: { code },
+      retryOnUnauthorized: false,
+    }),
+  refresh: () =>
+    request<{ expires_in: number; refresh_expires_in?: number }>('/auth/refresh', {
+      method: 'POST',
+      retryOnUnauthorized: false,
+    }),
+  logout: () =>
+    request<void>('/auth/logout', { method: 'POST', retryOnUnauthorized: false }),
 }
 
 export const modulesApi = {

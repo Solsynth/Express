@@ -146,6 +146,7 @@ func RegisterPublisherRoutes(engine *gin.Engine, releases *service.ReleaseServic
 	engine.GET("/api/marketplace/apps", listMarketplaceApps(releases))
 	engine.GET("/api/apps", listMarketplaceApps(releases))
 	registerConsoleRoutes(engine, releases, publishers)
+	registerHandoffRoutes(engine, releases, publishers, cfg)
 
 	group := engine.Group("/api/products/:productID")
 	group.GET("", getProduct(releases))

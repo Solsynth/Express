@@ -23,7 +23,24 @@ S3 object metadata. It never treats a Develop custom app as a product identity.
 
 Public product, release, channel, and update routes are unauthenticated.
 Mutation routes accept either `Authorization: Bearer <Sphere access token>` or
-the `AuthToken` cookie used by the DysonNetwork web clients.
+the `AuthToken` cookie this console sets on its own domain.
+
+The console obtains that cookie through the identity hand-off, because a cookie
+cannot span `id.solian.app` and the console's domain:
+
+```text
+POST /api/auth/session  {code}  → ConsoleSession + Set-Cookie AuthToken, RefreshToken
+POST /api/auth/refresh  {}      → {expires_in, refresh_expires_in} + refreshed cookies
+POST /api/auth/logout   {}      → 200, both cookies cleared
+```
+
+`/api/auth/session` redeems the one-time code server-to-server with the issuer,
+so the client secret and the tokens never reach the browser's address bar. All
+three routes are anonymous — the code and the refresh cookie are the
+credentials — and answer `503` when `[handoff]` is not configured. A refused
+redeem answers the issuer's OAuth-style error code with its HTTP status; a
+refused refresh clears both cookies and answers `401 {"error":"invalid_grant"}`.
+
 DistributionCenter sends that token to Stargate `DyAuthService.Authenticate`,
 then checks the resulting account with Sphere
 `DyPublisherService.IsPublisherMember` at editor role or higher. Superuser

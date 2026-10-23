@@ -70,6 +70,12 @@ function signIn() {
   window.location.href = signInUrl()
 }
 
+/** Ends this console's session; the issuer's own session is not ours to end. */
+async function signOut() {
+  accountOpen.value = false
+  await session.signOut()
+}
+
 function productName(product: { names?: Record<string, string>; name: string }): string {
   return localized(product.names, product.name, locale.value)
 }
@@ -96,7 +102,7 @@ watch(locale, () => applyRouteTitle(route.meta))
 
 onMounted(() => {
   document.addEventListener('click', closeMenus)
-  void session.load().then(() => void workspace.load())
+  void session.boot().then(() => void workspace.load())
 })
 onBeforeUnmount(() => document.removeEventListener('click', closeMenus))
 
@@ -218,6 +224,9 @@ function changeLocale(event: Event) {
               </li>
               <li v-for="item in primaryNav" :key="item.to" class="md:hidden">
                 <RouterLink :to="item.to">{{ t(item.labelKey) }}</RouterLink>
+              </li>
+              <li>
+                <button type="button" @click="signOut">{{ t('app.signOut') }}</button>
               </li>
             </ul>
           </div>

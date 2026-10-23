@@ -41,13 +41,47 @@ export interface RequestOptions {
   body?: unknown
   query?: Record<string, QueryValue>
   signal?: AbortSignal
+  /**
+   * Retry once through the refresh route after a 401. Off for the session
+   * routes themselves: a refused refresh must not start a refresh.
+   */
+  retryOnUnauthorized?: boolean
 }
 
 let unauthorizedHandler: (() => void) | null = null
+let refreshHandler: (() => Promise<boolean>) | null = null
+let refreshing: Promise<boolean> | null = null
 
 /** Installed by the session store so every 401 lands in one place. */
 export function onUnauthorized(handler: () => void) {
   unauthorizedHandler = handler
+}
+
+/**
+ * Installed by the session store. The access token is short-lived, so a 401
+ * on an ordinary request means "renew", not "signed out": this trades the
+ * refresh cookie for a fresh pair and reports whether the request is worth
+ * repeating.
+ */
+export function onSessionRefresh(handler: () => Promise<boolean>) {
+  refreshHandler = handler
+}
+
+/**
+ * One refresh shared by every concurrent 401. Without the shared promise a
+ * page that loads several panels would spend the refresh token once per panel
+ * and rotate it out from under the others.
+ */
+function refreshSession(): Promise<boolean> {
+  if (!refreshing) {
+    const attempt = refreshHandler ? refreshHandler() : Promise.resolve(false)
+    refreshing = attempt
+      .catch(() => false)
+      .finally(() => {
+        refreshing = null
+      })
+  }
+  return refreshing
 }
 
 export function buildUrl(path: string, query?: Record<string, QueryValue>): string {
@@ -94,28 +128,51 @@ async function send(url: string, init: RequestInit): Promise<Response> {
     throw new ExpressError(0, translate('apiError.unreachable'))
   }
   if (response.ok) return response
-
-  const error = await parseError(response)
-  if (error.status === 401) unauthorizedHandler?.()
-  throw error
+  throw await parseError(response)
 }
 
 /**
  * Sends one request to the DistributionCenter API. The session travels in the
- * HttpOnly AuthToken cookie Stargate sets on the shared cookie domain, so the
- * console never stores tokens.
+ * HttpOnly AuthToken cookie this console set from the hand-off, so the console
+ * never stores tokens.
+ *
+ * A 401 is not the end of a session: the access token is short-lived, so the
+ * request is repeated once behind a single shared refresh. Only a refresh that
+ * is itself refused reaches the signed-out handler.
  */
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = { Accept: 'application/json' }
   if (options.body !== undefined) headers['Content-Type'] = 'application/json'
 
-  const response = await send(buildUrl(path, options.query), {
+  const init: RequestInit = {
     method: options.method ?? 'GET',
     headers,
     credentials: 'same-origin',
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
     signal: options.signal,
-  })
+  }
+  const url = buildUrl(path, options.query)
 
-  return readJson<T>(response)
+  try {
+    return await readJson<T>(await send(url, init))
+  } catch (caught) {
+    const unauthenticated = caught instanceof ExpressError && caught.isUnauthenticated
+    if (!unauthenticated || options.retryOnUnauthorized === false) {
+      if (unauthenticated) unauthorizedHandler?.()
+      throw caught
+    }
+    if (!(await refreshSession())) {
+      unauthorizedHandler?.()
+      throw caught
+    }
+  }
+
+  // The retry is the last word: a second 401 means the fresh token was
+  // refused too, so the session really is over.
+  try {
+    return await readJson<T>(await send(url, init))
+  } catch (caught) {
+    if (caught instanceof ExpressError && caught.isUnauthenticated) unauthorizedHandler?.()
+    throw caught
+  }
 }

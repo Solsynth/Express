@@ -45,6 +45,24 @@ target = "stargate:9090"
 useTLS = false
 tlsSkipVerify = false
 
+[handoff]
+# Cross-domain session hand-off. A cookie cannot span id.solian.app and
+# dx.solsynth.dev, so the identity console returns a one-time code and this
+# server redeems it for a token pair stored in this console's own cookie.
+# Leave baseUrl or clientId empty to disable: the console then stays signed
+# out and the hand-off routes answer 503.
+baseUrl = "https://id.solian.app"
+clientId = ""
+# Proves the redemption is this app's. Empty makes it a public client, which
+# the issuer only accepts with PKCE.
+clientSecret = ""
+# Domain this console sets its own session cookie on, e.g. "dx.solsynth.dev".
+# Empty keeps it host-only, which is what local development wants.
+cookieDomain = ""
+# https-only cookies. Keep true in production; a Secure cookie over plain
+# http is silently dropped, so turn it off only for a local http run.
+cookieSecure = true
+
 [sphere]
 # Sphere owns publisher identity and membership authorization.
 target = "sphere:9090"

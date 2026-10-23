@@ -19,6 +19,19 @@ POST /api/products/{product_id}/releases/{release_id_or_version}/artifacts
 POST /api/products/{product_id}/releases/{release_id}/publish
 ```
 
+The console's session routes are anonymous and belong to this service, not to
+the issuer:
+
+```text
+GET  /api/console/session  who the AuthToken cookie belongs to
+POST /api/auth/session     redeem a hand-off code, set this domain's cookies
+POST /api/auth/refresh     renew the pair from the RefreshToken cookie
+POST /api/auth/logout      clear both cookies
+```
+
+They answer `503` while `[handoff]` is unconfigured, so a deployment without an
+issuer reports that instead of a `404` that reads as a routing bug.
+
 The process also exposes operational routes at the service root:
 
 ```text

@@ -59,6 +59,11 @@ type Config struct {
 		TLSSkipVerify bool   `toml:"tlsSkipVerify"`
 	} `toml:"auth"`
 
+	// Handoff configures the cross-domain session hand-off with the identity
+	// issuer. It is optional: an empty BaseURL or ClientID keeps the console
+	// API-only and the hand-off routes answer 503.
+	Handoff HandoffConfig `toml:"handoff"`
+
 	Sphere struct {
 		Target        string `toml:"target"`
 		UseTLS        bool   `toml:"useTLS"`
@@ -97,6 +102,30 @@ type Config struct {
 	Ports map[string]string `toml:"ports"`
 
 	Sync SyncConfig `toml:"sync"`
+}
+
+// HandoffConfig names the relying-app side of the identity hand-off.
+type HandoffConfig struct {
+	// BaseURL is the issuer's HTTP base (e.g. https://id.solian.app); the
+	// redeem and renew endpoints are appended to it.
+	BaseURL string `toml:"baseUrl"`
+	// ClientID is the app's registered id on the issuer.
+	ClientID string `toml:"clientId"`
+	// ClientSecret proves the redemption belongs to this app. Empty makes it
+	// a public client, which the issuer only accepts with PKCE.
+	ClientSecret string `toml:"clientSecret"`
+	// CookieDomain is the domain this console sets its own session cookie on
+	// (e.g. dx.solsynth.dev). Empty keeps the cookie host-only.
+	CookieDomain string `toml:"cookieDomain"`
+	// CookieSecure marks the cookies https-only. Keep it true outside local
+	// development, where a Secure cookie is silently dropped over http.
+	CookieSecure bool `toml:"cookieSecure"`
+}
+
+// HandoffEnabled reports whether the issuer hand-off is configured. The
+// console then signs in through the issuer instead of a bearer token.
+func (c *Config) HandoffEnabled() bool {
+	return c != nil && strings.TrimSpace(c.Handoff.BaseURL) != "" && strings.TrimSpace(c.Handoff.ClientID) != ""
 }
 
 // SyncConfig tunes the release sync engine.
@@ -142,6 +171,19 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimRight(parsed.Path, "/") == "/api" || strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), "/api") {
 			return fmt.Errorf("http.baseUrl must not include the /api path")
+		}
+	}
+	if baseURL := strings.TrimSpace(c.Handoff.BaseURL); baseURL != "" {
+		parsed, err := url.Parse(baseURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("handoff.baseUrl must be an absolute HTTP(S) URL")
+		}
+	}
+	// A cookie domain is a bare domain, never an origin: a browser silently
+	// drops a cookie whose Domain does not domain-match the response host.
+	if domain := strings.TrimSpace(c.Handoff.CookieDomain); domain != "" {
+		if strings.ContainsAny(domain, "/:") {
+			return fmt.Errorf("handoff.cookieDomain must be a bare domain such as dx.solsynth.dev")
 		}
 	}
 	if c.Releases.ArtifactRetention < 0 {
@@ -201,6 +243,7 @@ func Default() *Config {
 	cfg.Discovery.LeaseSeconds = 30
 	cfg.Discovery.Weight = 1
 	cfg.Analytics.Enabled = true
+	cfg.Handoff.CookieSecure = true
 	cfg.Sync.PollInterval = "5s"
 	cfg.Sync.RetryBase = "30s"
 	cfg.Sync.RetryCap = "1h"
@@ -281,6 +324,11 @@ func applyEnvOverrides(cfg *Config) {
 	setInt("DISTRIBUTION_SYNC_MAX_ATTEMPTS", &cfg.Sync.MaxAttempts)
 	setInt64("DISTRIBUTION_SYNC_MAX_ASSET_BYTES", &cfg.Sync.MaxAssetBytes)
 	setInt("DISTRIBUTION_SYNC_BATCH_SIZE", &cfg.Sync.BatchSize)
+	setStr("DISTRIBUTION_HANDOFF_BASE_URL", &cfg.Handoff.BaseURL)
+	setStr("DISTRIBUTION_HANDOFF_CLIENT_ID", &cfg.Handoff.ClientID)
+	setStr("DISTRIBUTION_HANDOFF_CLIENT_SECRET", &cfg.Handoff.ClientSecret)
+	setStr("DISTRIBUTION_HANDOFF_COOKIE_DOMAIN", &cfg.Handoff.CookieDomain)
+	setBool("DISTRIBUTION_HANDOFF_COOKIE_SECURE", &cfg.Handoff.CookieSecure)
 }
 
 // setList reads a comma-separated environment list. An empty value leaves the

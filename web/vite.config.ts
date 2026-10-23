@@ -8,7 +8,8 @@ import { defineConfig, loadEnv } from 'vite'
 // In development the SPA runs on the Vite server and every backend path is
 // proxied to DistributionCenter, so the app uses same-origin relative URLs in
 // both modes: in production the service serves web/dist itself, and the
-// HttpOnly AuthToken cookie Stargate issues stays first-party either way.
+// HttpOnly AuthToken cookie the hand-off sets on this domain stays first-party
+// either way.
 const backendPaths = ['/api', '/artifacts', '/health', '/alive', '/ready']
 
 export default defineConfig(({ mode }) => {

@@ -70,9 +70,11 @@ export function applyRouteTitle(meta: RouteMeta) {
 router.afterEach((to) => {
   applyRouteTitle(to.meta)
   // A gated page reached by a direct link is not a dead end: resolve the
-  // session before the view decides whether to offer sign-in.
+  // session before the view decides whether to offer sign-in. Boot also
+  // exchanges a hand-off code from the address bar, so the first paint after
+  // sign-in already has the account.
   const session = useSessionStore()
-  if (session.state === 'loading') void session.load()
+  if (session.state === 'loading') void session.boot()
 })
 
 export default router

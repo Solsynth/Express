@@ -133,6 +133,26 @@ so a deleted file never leaves a hole in a row.
 page names what it needs and offers the one action that resolves it instead of
 rendering an empty shell.
 
+### Sign-in
+
+The shell has exactly one sign-in affordance, in the top bar, and it leaves the
+console: `signInUrl()` points at the identity host with the current page as
+`redirectUri`. There is no local password form and no token is ever printed.
+
+The return trip lands on a page carrying `?code=…`. The console exchanges it
+once, strips it from the address bar before the exchange resolves, and then
+renders the same signed-in shell as a returning visitor. A failed exchange is
+reported in the status rail ("Sign-in did not complete") and the shell stays
+signed out — never a spinner, never a half-signed-in page.
+
+A 401 does not paint a signed-out shell on its own: the console renews the
+access token once and repeats the request, so a short token lifetime is
+invisible. Only a refused refresh shows the signed-out state.
+
+Signed-out copy names the action, not the mechanism: "Sign in to publish", not
+"no AuthToken cookie". Signing out is the account menu's last item and clears
+this console's session only.
+
 ### Ledger
 
 `table.ledger` is the only table style. Every table carries `ledger-stack`:
