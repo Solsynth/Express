@@ -64,6 +64,11 @@ type Config struct {
 	// API-only and the hand-off routes answer 503.
 	Handoff HandoffConfig `toml:"handoff"`
 
+	// Picker configures the cross-domain file picker this console embeds. It
+	// is optional: an empty ClientID leaves the picker to authenticate by
+	// cookie, which only works when both share a registrable domain.
+	Picker PickerConfig `toml:"picker"`
+
 	Sphere struct {
 		Target        string `toml:"target"`
 		UseTLS        bool   `toml:"useTLS"`
@@ -165,6 +170,32 @@ type HandoffConfig struct {
 	CookieSecure bool `toml:"cookieSecure"`
 }
 
+// PickerConfig names the file picker this console embeds, and the identity
+// client the picker's host is registered under.
+//
+// The picker lives on another registrable domain (fs.solian.app against this
+// console's dx.solsynth.dev), so its session cookie is withheld by the browser
+// when the page is framed: a SameSite=Lax cookie is not sent in a cross-site
+// iframe. The console therefore asks the issuer for a single-use hand-off code
+// bound to the picker's client and hands that to the frame, which redeems it
+// for a bearer token on its own origin. The console never sees a token.
+//
+// Empty ClientID leaves the feature off: the picker then only authenticates by
+// cookie, which works when this console and the picker share a site.
+type PickerConfig struct {
+	// ClientID is the picker host's registered id on the issuer. The code is
+	// issued for this client, and only the picker's server holds its secret.
+	ClientID string `toml:"clientId"`
+	// FrameURL is the picker page to embed. It must be on a host the client
+	// above is registered for, or the issuer refuses the target.
+	FrameURL string `toml:"frameUrl"`
+}
+
+// PickerEnabled reports whether a cross-domain picker can be handed a code.
+func (c *Config) PickerEnabled() bool {
+	return c != nil && strings.TrimSpace(c.Picker.ClientID) != "" && strings.TrimSpace(c.Picker.FrameURL) != ""
+}
+
 // HandoffEnabled reports whether the issuer hand-off is configured. The
 // console then signs in through the issuer instead of a bearer token.
 func (c *Config) HandoffEnabled() bool {
@@ -228,6 +259,20 @@ func (c *Config) Validate() error {
 		if strings.ContainsAny(domain, "/:") {
 			return fmt.Errorf("handoff.cookieDomain must be a bare domain such as dx.solsynth.dev")
 		}
+	}
+	// A frame URL is an absolute origin plus the picker's path. The issuer
+	// refuses a target whose host the picker client is not registered for, so
+	// a malformed value would surface as a refused hand-off at runtime.
+	if frameURL := strings.TrimSpace(c.Picker.FrameURL); frameURL != "" {
+		parsed, err := url.Parse(frameURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+			return fmt.Errorf("picker.frameUrl must be an absolute HTTP(S) URL with no query or fragment")
+		}
+	}
+	// A picker client without the issuer cannot be redeemed, so half of the
+	// pair is a configuration error rather than a feature that half-works.
+	if strings.TrimSpace(c.Picker.ClientID) != "" && !strings.HasPrefix(strings.TrimSpace(c.Handoff.BaseURL), "http") {
+		return fmt.Errorf("picker.clientId requires handoff.baseUrl, which names the issuer that redeems the code")
 	}
 	if c.Releases.ArtifactRetention < 0 {
 		return fmt.Errorf("releases.artifactRetention must be zero or greater")
@@ -404,6 +449,8 @@ func applyEnvOverrides(cfg *Config) {
 	setStr("DISTRIBUTION_HANDOFF_CLIENT_SECRET", &cfg.Handoff.ClientSecret)
 	setStr("DISTRIBUTION_HANDOFF_COOKIE_DOMAIN", &cfg.Handoff.CookieDomain)
 	setBool("DISTRIBUTION_HANDOFF_COOKIE_SECURE", &cfg.Handoff.CookieSecure)
+	setStr("DISTRIBUTION_PICKER_CLIENT_ID", &cfg.Picker.ClientID)
+	setStr("DISTRIBUTION_PICKER_FRAME_URL", &cfg.Picker.FrameURL)
 }
 
 // setList reads a comma-separated environment list. An empty value leaves the

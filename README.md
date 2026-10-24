@@ -561,5 +561,38 @@ listed among its allowed redirect hosts. `DISTRIBUTION_HANDOFF_*` overrides
 every field. Bearer-token clients are unaffected: the API still accepts
 `Authorization: Bearer` and the cookie on every other route.
 
+### File picker
+
+The product-art picker is an iframe served from the drive's own host, which is
+not this console's registrable domain. A `SameSite=Lax` cookie is not sent in
+a cross-site iframe, so the picker would always read as signed out, and it
+cannot complete a sign-in redirect either — the identity host refuses to be
+framed.
+
+The console asks the issuer for a single-use code bound to the **picker's**
+client and hands only that to the frame, which redeems it on its own origin
+for a bearer token it keeps in memory. A code lives for `[handoff]`'s code
+lifetime (60s by default) and is single-use, and the console never holds a
+token for the drive — its own session stays an HttpOnly cookie, as before.
+
+```toml
+[picker]
+clientId = "app.solian.snfs"                   # the picker host's client
+frameUrl = "https://fs.solian.app/picker"      # the page to embed
+```
+
+Both the client id and the frame URL are required together, and `handoff.baseUrl`
+must be set: it names the issuer that redeems the code. The client must be
+registered with the issuer with `frameUrl`'s host among its allowed redirect
+hosts. Leaving `clientId` empty disables the feature, and the picker then
+authenticates by cookie — which works when it shares a site with this console.
+
+`POST /api/picker/code` answers `{code, expiresIn, frameUrl}` and never a
+token. It is authenticated by this console's own cookie and refuses a caller
+without one. The frame URL is returned rather than taken from the SPA's
+build-time value because the issuer validates the redirect target when it
+issues the code, and a frame opened at any other address would fail at
+redemption.
+
 Console design and copy conventions are documented in
 [`docs/DESIGN_SYSTEM.md`](docs/DESIGN_SYSTEM.md).

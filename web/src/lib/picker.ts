@@ -16,13 +16,24 @@
  * never touches product art should not pay for it.
  */
 
+import { request } from '@/lib/api/client'
 import type { CloudFile } from '@/lib/api/types'
 import { SNFS_ORIGIN } from './media'
 import type { PickerFile } from './picker-types'
 
 export type { PickerFile }
 
-/** The subset of the picker SDK this app calls. */
+/**
+ * The subset of the picker SDK this app calls.
+ *
+ * `code` is the cross-domain path. The picker is framed from another site, so
+ * its `SameSite=Lax` session cookie is withheld and the frame cannot complete
+ * a sign-in redirect — the identity host refuses to be framed. Instead this
+ * app asks its own server for a single-use hand-off code bound to the picker's
+ * client; the frame redeems it on its own origin for a bearer token it keeps
+ * in memory. A code is single-use and lasts about a minute, and this app never
+ * holds a token for the drive.
+ */
 interface PickerSdk {
   openSnfsPicker: (
     config: { frameUrl: string; dialogTitle?: string; width?: number; height?: number },
@@ -38,6 +49,8 @@ interface PickerSdk {
         locale?: 'en' | 'zh-CN'
       }
       token?: string
+      /** A single-use hand-off code for the picker's client. */
+      code?: string
     },
     handlers?: { onReady?: () => void; onSignedOut?: () => void; onError?: (m: string) => void },
   ) => Promise<PickerFile[]>
@@ -55,6 +68,38 @@ declare global {
  */
 
 export const PICKER_FRAME_URL = `${SNFS_ORIGIN}/picker`
+
+/**
+ * What the console answers when asked for a picker code.
+ *
+ * `frame_url` is the address the code was bound to. The server owns it rather
+ * than this module: the issuer validates the redirect target when it issues
+ * the code, so the frame has to be opened at exactly that address. A
+ * build-time value here has no way to know what the server was configured
+ * with, and a mismatch would fail at redemption rather than at issue.
+ */
+interface PickerCode {
+  code: string
+  expiresIn: number
+  frameUrl: string
+}
+
+/**
+ * Asks this console for a hand-off code bound to the picker's client.
+ *
+ * A failure resolves to null rather than throwing: the picker still works
+ * when it authenticates by cookie, which is the case whenever the console and
+ * the picker share a registrable domain. Reporting the failure as a missing
+ * code keeps that deployment working instead of breaking it over a feature it
+ * never enabled.
+ */
+async function requestPickerCode(): Promise<PickerCode | null> {
+  try {
+    return await request<PickerCode>('/picker/code', { method: 'POST' })
+  } catch {
+    return null
+  }
+}
 
 let loading: Promise<PickerSdk> | null = null
 
@@ -138,10 +183,15 @@ export type PickOutcome =
  * again.
  */
 export async function pickArtwork(options: PickArtworkOptions): Promise<PickOutcome> {
-  const sdk = await loadSdk()
+  const [sdk, grant] = await Promise.all([loadSdk(), requestPickerCode()])
+
+  // The server names the frame when it issues a code, because that is the
+  // address the code is bound to. A deployment without the picker configured
+  // answers no code, and the frame falls back to the build-time URL, which is
+  // the same-site case the cookie already covers.
   const files = await sdk.openSnfsPicker(
     {
-      frameUrl: PICKER_FRAME_URL,
+      frameUrl: grant?.frameUrl || PICKER_FRAME_URL,
       dialogTitle: options.title,
       width: options.width ?? 760,
       height: options.height ?? 580,
@@ -157,6 +207,10 @@ export async function pickArtwork(options: PickArtworkOptions): Promise<PickOutc
         theme: document.documentElement.dataset.theme === 'express-light' ? 'light' : 'dark',
         locale: document.documentElement.lang === 'zh-CN' ? 'zh-CN' : 'en',
       },
+      // A code crosses the boundary instead of a token: it is single-use, it
+      // lasts about a minute, and only the picker's own server holds the
+      // secret that redeems it. This app never sees a token for the drive.
+      ...(grant ? { code: grant.code } : {}),
     },
   )
   if (!files.length) return { kind: 'cancelled' }

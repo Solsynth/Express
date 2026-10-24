@@ -63,6 +63,19 @@ cookieDomain = ""
 # http is silently dropped, so turn it off only for a local http run.
 cookieSecure = true
 
+[picker]
+# The embedded file picker, when it lives on another registrable domain. A
+# SameSite=Lax cookie is not sent in a cross-site iframe, so a picker framed
+# from dx.solsynth.dev would always read as signed out. Instead this console
+# asks the issuer for a single-use code bound to the picker's own client and
+# hands only that to the frame, which redeems it on its own origin.
+# Leave clientId empty to disable: the picker then authenticates by cookie,
+# which works when it shares a site with this console.
+clientId = ""
+# The picker page to embed. It must be on a host the client above is
+# registered for, or the issuer refuses the target.
+frameUrl = "https://fs.solian.app/picker"
+
 [sphere]
 # Sphere owns publisher identity and membership authorization.
 target = "sphere:9090"
